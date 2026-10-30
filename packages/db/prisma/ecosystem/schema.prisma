@@ -1,0 +1,479 @@
+// ecosystem.db: the outside world. Banks, gateway, UPI switch, Account
+// Aggregator, lender, insurer, fund house, wearable. CRED never reads this
+// database; it learns only through signed webhooks and consented AA pulls.
+//
+// Same conventions as cred.db: Int paise, Int bps, String enums, *Json strings,
+// "YYYY-MM-DD" calendar dates.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/ecosystem"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+/// A real-world individual, known to every institution by phone/PAN
+model Person {
+  id         String @id @default(cuid())
+  personaKey String @unique
+  name       String
+  phone      String @unique
+  panMock    String @unique
+  dob        String
+  city       String
+  employer   String?
+
+  bankAccounts  BankAccount[]
+  fixedDeposits FixedDeposit[]
+  cardAccounts  CreditCardAccount[]
+  vpas          Vpa[]
+  aaConsents    AaConsentRequest[]
+  loanApps      LoanApplication[]
+  policies      Policy[]
+  fundHoldings  FundHolding[]
+  goldHoldings  GoldHolding[]
+  wearableLinks WearableLink[]
+  stepDays      StepDay[]
+  behaviour     PersonaBehaviour?
+}
+
+// ── Mock Bank ────────────────────────────────────────────────────────────────
+
+model BankAccount {
+  id            String @id @default(cuid())
+  personId      String
+  accountNo     String @unique
+  ifsc          String
+  /// savings | salary
+  kind          String
+  balancePaise  Int
+
+  person Person    @relation(fields: [personId], references: [id], onDelete: Cascade)
+  txns   BankTxn[]
+  vpas   Vpa[]
+}
+
+model BankTxn {
+  id          String   @id @default(cuid())
+  accountId   String
+  /// salary | debit | credit | emi | card_payment
+  kind        String
+  amountPaise Int
+  narration   String
+  at          DateTime
+
+  account BankAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, at])
+}
+
+model FixedDeposit {
+  id             String @id @default(cuid())
+  personId       String
+  principalPaise Int
+  ratePaBps      Int
+  openedOn       String
+  maturesOn      String
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+}
+
+model CreditCardAccount {
+  id               String @id @default(cuid())
+  personId         String
+  bankName         String
+  network          String
+  last4            String
+  /// Gateway card-on-file token
+  token            String @unique
+  limitPaise       Int
+  outstandingPaise Int
+  billingDay       Int
+  dueDay           Int
+
+  person     Person          @relation(fields: [personId], references: [id], onDelete: Cascade)
+  auths      CardAuth[]
+  charges    CardCharge[]
+  statements CardStatement[]
+}
+
+/// 3-D Secure OTP challenge for a gateway card payment
+model CardAuth {
+  id               String   @id @default(cuid())
+  cardAccountId    String
+  gatewayPaymentId String   @unique
+  merchantName     String
+  amountPaise      Int
+  otp              String
+  attemptsLeft     Int      @default(3)
+  /// pending | approved | failed
+  status           String   @default("pending")
+  createdAt        DateTime @default(now())
+
+  card CreditCardAccount @relation(fields: [cardAccountId], references: [id], onDelete: Cascade)
+}
+
+/// A posted card transaction
+model CardCharge {
+  id            String   @id @default(cuid())
+  cardAccountId String
+  merchant      String
+  category      String
+  amountPaise   Int
+  postedAt      DateTime
+  statementId   String?
+
+  card CreditCardAccount @relation(fields: [cardAccountId], references: [id], onDelete: Cascade)
+
+  @@index([cardAccountId, postedAt])
+}
+
+model CardStatement {
+  id            String @id @default(cuid())
+  cardAccountId String
+  periodStart   String
+  periodEnd     String
+  totalDuePaise Int
+  minDuePaise   Int
+  paidPaise     Int    @default(0)
+  dueDate       String
+
+  card     CreditCardAccount @relation(fields: [cardAccountId], references: [id], onDelete: Cascade)
+  payments CardPayment[]
+}
+
+model CardPayment {
+  id          String   @id @default(cuid())
+  statementId String
+  amountPaise Int
+  receivedAt  DateTime
+  onTime      Boolean
+  /// The paying app's reference (CRED's bill payment id)
+  clientRef   String?
+
+  statement CardStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+}
+
+// ── Gateway & merchant ───────────────────────────────────────────────────────
+
+model Merchant {
+  id        String @id @default(cuid())
+  name      String @unique
+  category  String
+  apiKey    String @unique
+
+  payments GatewayPayment[]
+}
+
+model GatewayPayment {
+  id          String   @id @default(cuid())
+  merchantId  String
+  orderId     String
+  amountPaise Int
+  description String
+  /// card | upi
+  method      String
+  /// created | requires_authentication | succeeded | failed
+  status      String
+  failureReason String?
+  returnUrl   String
+  shopperPhone String
+  upiTxnId    String?  @unique
+  createdAt   DateTime @default(now())
+
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@unique([merchantId, orderId])
+}
+
+// ── UPI switch ───────────────────────────────────────────────────────────────
+
+model Vpa {
+  id        String @id @default(cuid())
+  personId  String?
+  accountId String?
+  handle    String @unique
+  /// Display name, e.g. merchants and friends who are not seeded people
+  name      String
+  pin       String?
+
+  person  Person?      @relation(fields: [personId], references: [id], onDelete: Cascade)
+  account BankAccount? @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model UpiTxn {
+  id           String   @id @default(cuid())
+  payerVpa     String
+  payeeVpa     String
+  amountPaise  Int
+  note         String?
+  /// awaiting_pin | success | failed
+  status       String   @default("awaiting_pin")
+  rrn          String?
+  /// cred | shopkart_gateway
+  initiatedVia String
+  clientRef    String
+  returnUrl    String
+  createdAt    DateTime @default(now())
+}
+
+// ── Account Aggregator ───────────────────────────────────────────────────────
+
+model AaConsentRequest {
+  id              String   @id @default(cuid())
+  consentHandle   String   @unique
+  consentId       String?  @unique
+  fiu             String
+  personId        String
+  purpose         String
+  fiTypesJson     String
+  dataRangeMonths Int
+  accountRefsJson String   @default("[]")
+  /// PENDING | ACTIVE | REJECTED | REVOKED | EXPIRED
+  status          String   @default("PENDING")
+  clientRef       String
+  redirectUrl     String
+  createdAt       DateTime @default(now())
+  decidedAt       DateTime?
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+}
+
+// ── Lender ───────────────────────────────────────────────────────────────────
+
+model Lender {
+  id         String @id @default(cuid())
+  name       String @unique
+  ratePaBps  Int
+  feeBps     Int
+  maxTenure  Int
+  /// Max EMI as share of verified income (FOIR), bps
+  maxFoirBps Int
+
+  applications LoanApplication[]
+}
+
+model LoanApplication {
+  id                 String   @id @default(cuid())
+  lenderId           String
+  personId           String
+  quoteRef           String   @unique
+  /// purchase_emi | personal_loan | loan_against_funds | balance_switch_emi
+  kind               String
+  principalPaise     Int
+  tenureMonths       Int
+  ratePaBps          Int
+  feeBps             Int
+  quoteJson          String
+  /// quoted | applied | approved | declined | disbursed | closed
+  status             String   @default("quoted")
+  clientRef          String
+  kfsAcknowledgedAt  DateTime?
+  createdAt          DateTime @default(now())
+
+  lender Lender       @relation(fields: [lenderId], references: [id])
+  person Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  loan   LoanAccount?
+}
+
+model LoanAccount {
+  id            String   @id @default(cuid())
+  applicationId String   @unique
+  disbursedAt   DateTime
+  scheduleJson  String
+  paidCount     Int      @default(0)
+
+  application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+}
+
+// ── Insurer ──────────────────────────────────────────────────────────────────
+
+model Insurer {
+  id   String @id @default(cuid())
+  name String @unique
+
+  products InsuranceProduct[]
+}
+
+model InsuranceProduct {
+  id                   String @id @default(cuid())
+  insurerId            String
+  name                 String
+  /// family_floater | super_top_up | employer_group_health | term_life
+  kind                 String
+  /// Annual premium per ₹1L cover, by age band; JSON [{maxAge, paise}]
+  ratesJson            String
+  wellnessRewardMaxPct Float  @default(0)
+
+  insurer  Insurer  @relation(fields: [insurerId], references: [id])
+  policies Policy[]
+}
+
+model Policy {
+  id                 String   @id @default(cuid())
+  personId           String
+  productId          String
+  coverPaise         Int
+  annualPremiumPaise Int
+  isEmployer         Boolean  @default(false)
+  employerName       String?
+  membersCoveredJson String
+  renewalDate        String?
+  clientRef          String?
+
+  person Person           @relation(fields: [personId], references: [id], onDelete: Cascade)
+  product InsuranceProduct @relation(fields: [productId], references: [id])
+  claims InsuranceClaim[]
+}
+
+model InsuranceClaim {
+  id           String   @id @default(cuid())
+  policyId     String
+  amountPaise  Int
+  description  String
+  status       String
+  timelineJson String
+  clientRef    String?
+  createdAt    DateTime @default(now())
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+}
+
+// ── Fund house & gold ────────────────────────────────────────────────────────
+
+model FundHouse {
+  id   String @id @default(cuid())
+  name String @unique
+
+  schemes Scheme[]
+}
+
+model Scheme {
+  id              String @id @default(cuid())
+  fundHouseId     String
+  code            String @unique
+  name            String
+  /// equity | debt | hybrid | gold
+  category        String
+  navPaise        Int
+  expenseRatioBps Int
+  exitLoadBps     Int
+  expectedReturnBps Int
+
+  fundHouse FundHouse     @relation(fields: [fundHouseId], references: [id])
+  holdings  FundHolding[]
+}
+
+model FundHolding {
+  id         String @id @default(cuid())
+  personId   String
+  schemeId   String
+  folio      String
+  units      Float
+  costPaise  Int
+  acquiredOn String
+
+  person      Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  scheme      Scheme       @relation(fields: [schemeId], references: [id])
+  redemptions Redemption[]
+  liens       Lien[]
+
+  @@unique([folio, schemeId])
+}
+
+model Redemption {
+  id          String   @id @default(cuid())
+  holdingId   String
+  amountPaise Int
+  units       Float
+  /// requested | completed
+  status      String
+  clientRef   String
+  createdAt   DateTime @default(now())
+
+  holding FundHolding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+}
+
+model Lien {
+  id                   String @id @default(cuid())
+  holdingId            String
+  units                Float
+  lenderApplicationRef String
+  /// marked | released
+  status               String
+
+  holding FundHolding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+}
+
+model GoldHolding {
+  id         String @id @default(cuid())
+  personId   String
+  grams      Float
+  costPaise  Int
+  acquiredOn String
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+}
+
+// ── Wearable ─────────────────────────────────────────────────────────────────
+
+model WearableLink {
+  id        String    @id @default(cuid())
+  personId  String
+  /// apple_health | health_connect
+  provider  String
+  sharedWith String
+  clientRef String
+  linkedAt  DateTime
+  revokedAt DateTime?
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+}
+
+/// Raw daily steps. Stays in the ecosystem; only weekly summaries leave.
+model StepDay {
+  id       String @id @default(cuid())
+  personId String
+  date     String
+  steps    Int
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  @@unique([personId, date])
+}
+
+// ── Simulation ───────────────────────────────────────────────────────────────
+
+/// How each persona behaves when the clock advances (scripted, deterministic)
+model PersonaBehaviour {
+  personId          String @id
+  /// full | minimum | partial_pct:<n> | skip
+  billPayHabit      String
+  monthlySpendPaise Int
+  salaryPaise       Int
+  avgDailySteps     Int
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+}
+
+/// Outbound webhooks to CRED, delivered with retries
+model WebhookOutbox {
+  id          String   @id
+  type        String
+  payloadJson String
+  /// pending | delivered | failed
+  status      String   @default("pending")
+  attempts    Int      @default(0)
+  lastError   String?
+  nextAttemptAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([status, nextAttemptAt])
+}
+
+model SimClock {
+  id          Int    @id @default(1)
+  currentDate String
+}

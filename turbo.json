@@ -1,0 +1,21 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "ui": "stream",
+  "globalEnv": ["DEMO_MODE", "CRED_API_URL", "ECOSYSTEM_API_URL", "WEBHOOK_SECRET_ECOSYSTEM", "PARTNER_API_KEY_CRED", "SESSION_SECRET", "SHOPKART_MERCHANT_KEY", "CRED_DATABASE_URL", "ECOSYSTEM_DATABASE_URL"],
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"]
+    },
+    "test": {
+      "outputs": []
+    }
+  }
+}

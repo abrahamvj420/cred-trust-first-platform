@@ -1,0 +1,31 @@
+{
+  "name": "@cred/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./cred": "./src/cred.ts",
+    "./ecosystem": "./src/ecosystem.ts",
+    "./seed": "./src/seed/index.ts"
+  },
+  "scripts": {
+    "generate": "prisma generate --config prisma.cred.config.ts && prisma generate --config prisma.ecosystem.config.ts",
+    "push": "prisma db push --config prisma.cred.config.ts && prisma db push --config prisma.ecosystem.config.ts",
+    "seed": "pnpm push && tsx src/seed/cli.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@cred/types": "workspace:*",
+    "@prisma/adapter-better-sqlite3": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "@cred/engine": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "prisma": "7.10.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.12"
+  }
+}

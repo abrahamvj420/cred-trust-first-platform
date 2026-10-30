@@ -22,16 +22,55 @@ This is a prototype of a shared offer engine that lets CRED offer lending, insur
 
 ## Tech stack
 
-_TBD_
+pnpm + Turborepo monorepo, TypeScript everywhere.
+
+- **Apps:** Next.js 16 (App Router) + Tailwind CSS 4
+- **Services:** Fastify 5, contracts in Zod 4 (`packages/types`)
+- **Data:** Prisma 7 + SQLite, one database per service (`cred.db`, `ecosystem.db`)
+- **Tests:** Vitest (unit), plus `pnpm test:e2e` across running services
+
+| Path | What it is | Port |
+|---|---|---|
+| `apps/cred` | CRED member app | 3000 |
+| `apps/admin` | CRED internal console + Demo control room | 3001 |
+| `apps/shop` | ShopKart demo store | 3002 |
+| `apps/ecosystem` | Outside-world screens: `/bank`, `/upi`, `/aa`, `/insurer`, `/fundhouse` | 3003 |
+| `services/cred-api` | CRED backend: ingest, offer engine, permissions, audit, SSE | 4000 |
+| `services/ecosystem-api` | Bank, gateway, UPI, AA, lender, insurer, fund house, wearable, `/sim` | 4100 |
+
+Shared packages: `types` (contracts), `engine` (offer engine + savings maths), `db` (Prisma schemas + seed personas), `ui` (components + one theme per brand), `service-kit` (contract-only Fastify routing, validation, `/status`, DEMO_MODE guard).
 
 ## Setup
 
-_TBD_
+Requires Node 22+ and pnpm 10.
+
+```bash
+pnpm install          # also generates both Prisma clients
+cp .env.example .env  # local demo secrets; DEMO_MODE=true
+pnpm seed             # create both databases and load the demo personas
+```
 
 ## Running locally
 
-_TBD_
+```bash
+pnpm dev              # starts all apps and services on the ports above
+pnpm test             # unit tests + boundary checks
+pnpm test:e2e         # cross-service tests (needs `pnpm dev` running)
+pnpm typecheck
+```
+
+Every app and service answers `GET /status`. The control room at http://localhost:3001/demo shows them all.
+
+### Demo personas
+
+| Persona | Story | Features |
+|---|---|---|
+| Aarav Mehta | Pays in full, about to buy a ₹1.5L laptop, no Smart Savings yet | Golden path, 1, 2, 3, 5, 7 |
+| Priya Nair | Family of five, employer cover plus a floater, parents uncovered, renewal due | 4, 6 |
+| Sneha Kapoor | ₹25L across FDs, funds and gold; saving for a house | 2, 7 |
+| Kabir Singh | Newer member, one partial bill after his wedding | 3, 5, 8 |
+| Rohan Das | 90% utilisation, minimum-only payments: gets help, not credit | Stress case |
 
 ## Demo flow
 
-_TBD_
+_Written in M7._

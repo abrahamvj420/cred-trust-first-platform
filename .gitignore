@@ -27,3 +27,16 @@ coverage/
 # Editor
 .vscode/*
 !.vscode/settings.json
+
+# Turborepo
+.turbo/
+
+# SQLite databases and generated Prisma clients
+*.db
+*.db-journal
+packages/db/src/generated/
+
+# Next.js
+next-env.d.ts
+*.tsbuildinfo
+packages/db/data/*.db*

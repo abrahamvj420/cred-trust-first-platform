@@ -1,0 +1,31 @@
+/*
+ * Shared Tailwind v4 bridge. Each app imports this after `@import "tailwindcss"`.
+ * Utilities like bg-bg, text-muted, border-border, rounded-md read the active
+ * brand's CSS variables, so components restyle per brand with no ad-hoc colours.
+ */
+@source "./";
+
+@theme inline {
+  --color-bg: var(--brand-bg);
+  --color-surface: var(--brand-surface);
+  --color-raised: var(--brand-raised);
+  --color-border: var(--brand-border);
+  --color-text: var(--brand-text);
+  --color-muted: var(--brand-muted);
+  --color-accent: var(--brand-accent);
+  --color-accent-text: var(--brand-accent-text);
+  --color-positive: var(--brand-positive);
+  --color-negative: var(--brand-negative);
+  --color-warning: var(--brand-warning);
+  --radius-sm: var(--brand-radius-sm);
+  --radius-md: var(--brand-radius-md);
+  --radius-lg: var(--brand-radius-lg);
+  --font-sans: var(--font-brand), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-brand-mono), ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  html, body { background: var(--brand-bg); color: var(--brand-text); }
+  body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  .tabular { font-variant-numeric: tabular-nums; }
+}

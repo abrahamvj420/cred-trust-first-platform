@@ -1,0 +1,29 @@
+{
+  "name": "cred-trust-first",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.34.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test && pnpm check:boundaries",
+    "test:e2e": "vitest run --config tests/e2e/vitest.config.ts",
+    "seed": "pnpm --filter @cred/db seed",
+    "db:generate": "pnpm --filter @cred/db generate",
+    "check:boundaries": "tsx scripts/check-boundaries.ts",
+    "postinstall": "pnpm --filter @cred/db generate || true"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.23.15",
+    "turbo": "^2.11.10",
+    "typescript": "5.9.3",
+    "vitest": "^4.1.12",
+    "@cred/types": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

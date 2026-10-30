@@ -1,0 +1,450 @@
+// cred.db: what CRED legitimately knows. Everything here arrived through
+// the member, a signed partner webhook, or a consented Account Aggregator pull.
+//
+// Conventions
+// - Money is Int paise. Rates are Int basis points.
+// - Status/kind fields are String, validated by Zod enums in @cred/types.
+// - *Json fields are String holding JSON, validated by Zod on read.
+// - Calendar dates (no time) are String "YYYY-MM-DD"; instants are DateTime.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../../src/generated/cred"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Member {
+  id          String    @id @default(cuid())
+  personaKey  String    @unique
+  name        String
+  phone       String    @unique
+  city        String
+  age         Int
+  vpa         String
+  memberSince String
+  deletedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  cards             Card[]
+  upiTransactions   UpiTransaction[]
+  permissions       Permission[]
+  aaConsents        AaConsent[]
+  income            IncomeProfile?
+  holdings          Holding[]
+  goals             Goal[]
+  familyMembers     FamilyMember[]
+  policies          InsurancePolicy[]
+  activitySummaries ActivitySummary[]
+  wearableLink      WearableLink?
+  ladder            LadderProgress?
+  decisions         EngineDecision[]
+  offers            Offer[]
+  loans             Loan[]
+  helpPlans         HelpPlan[]
+  sellIntents       SellIntent[]
+  events            DomainEvent[]
+  audit             AuditLog[]
+}
+
+model Card {
+  id               String @id @default(cuid())
+  memberId         String
+  issuerName       String
+  network          String
+  last4            String
+  limitPaise       Int
+  outstandingPaise Int    @default(0)
+  billingDay       Int
+  dueDay           Int
+  /// Bank's customer and card ids, as sent in webhooks
+  customerRef      String
+  cardRef          String @unique
+
+  member       Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  transactions CardTransaction[]
+  statements   Statement[]
+}
+
+model CardTransaction {
+  id          String   @id @default(cuid())
+  cardId      String
+  externalRef String   @unique
+  merchant    String
+  category    String
+  amountPaise Int
+  postedAt    DateTime
+
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId, postedAt])
+}
+
+model Statement {
+  id            String @id @default(cuid())
+  cardId        String
+  externalRef   String @unique
+  periodStart   String
+  periodEnd     String
+  totalDuePaise Int
+  minDuePaise   Int
+  paidPaise     Int    @default(0)
+  dueDate       String
+  /// open | paid | partial | unpaid | overdue
+  status        String @default("open")
+
+  card     Card          @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  payments BillPayment[]
+
+  @@index([cardId, periodEnd])
+}
+
+model BillPayment {
+  id          String   @id @default(cuid())
+  statementId String
+  externalRef String?  @unique
+  /// full | minimum | custom
+  kind        String
+  amountPaise Int
+  paidAt      DateTime
+  onTime      Boolean
+
+  statement Statement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+}
+
+model UpiTransaction {
+  id          String   @id @default(cuid())
+  memberId    String
+  upiTxnRef   String?  @unique
+  payerVpa    String
+  payeeVpa    String
+  payeeName   String?
+  amountPaise Int
+  note        String?
+  /// awaiting_pin | success | failed
+  status      String
+  rrn         String?
+  createdAt   DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model Permission {
+  id          String    @id @default(cuid())
+  memberId    String
+  /// smart_savings | income_data | health_data | portfolio_data
+  scope       String
+  /// granted | withdrawn
+  status      String
+  context     String?
+  grantedAt   DateTime?
+  withdrawnAt DateTime?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, scope])
+}
+
+model AaConsent {
+  id            String    @id @default(cuid())
+  memberId      String
+  consentHandle String    @unique
+  consentId     String?   @unique
+  /// income_verification | portfolio_tracking | protection_review
+  purpose       String
+  fiTypesJson   String
+  /// PENDING | ACTIVE | REJECTED | REVOKED | EXPIRED
+  status        String
+  createdAt     DateTime  @default(now())
+  expiresAt     DateTime?
+  lastFetchedAt DateTime?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model IncomeProfile {
+  memberId        String   @id
+  monthlyNetPaise Int
+  employer        String
+  monthsVerified  Int
+  verifiedAt      DateTime
+  consentId       String
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model Holding {
+  id                String  @id @default(cuid())
+  memberId          String
+  /// mutual_fund | fixed_deposit | gold
+  kind              String
+  name              String
+  provider          String
+  /// Fund folio / FD ref, used when instructing the provider
+  externalRef       String
+  schemeCode        String?
+  units             Float?
+  valuePaise        Int
+  costPaise         Int
+  acquiredAt        String
+  expenseRatioBps   Int?
+  expectedReturnBps Int
+  sourceConsentId   String?
+
+  member      Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  sellIntents SellIntent[]
+
+  @@unique([memberId, externalRef, schemeCode])
+}
+
+model SellIntent {
+  id                String   @id @default(cuid())
+  memberId          String
+  holdingId         String
+  amountNeededPaise Int
+  months            Int
+  comparisonJson    String
+  /// open | sold | borrowed | abandoned
+  status            String   @default("open")
+  createdAt         DateTime @default(now())
+
+  member  Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  holding Holding @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+}
+
+model Goal {
+  id               String   @id @default(cuid())
+  memberId         String
+  name             String
+  targetPaise      Int
+  targetDate       String
+  assumedReturnBps Int
+  createdAt        DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model FamilyMember {
+  id       String @id @default(cuid())
+  memberId String
+  name     String
+  /// self | spouse | child | parent | parent_in_law
+  relation String
+  age      Int
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model InsurancePolicy {
+  id                  String  @id @default(cuid())
+  memberId            String
+  externalRef         String  @unique
+  insurerName         String
+  productName         String
+  /// health_individual | health_family_floater | employer_group_health | term_life
+  kind                String
+  coverPaise          Int
+  annualPremiumPaise  Int
+  isEmployer          Boolean @default(false)
+  employerName        String?
+  membersCoveredJson  String
+  renewalDate         String?
+  /// aa | cred_purchase
+  source              String
+
+  member Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  claims Claim[]
+}
+
+model Claim {
+  id           String   @id @default(cuid())
+  policyId     String
+  externalRef  String?  @unique
+  amountPaise  Int
+  description  String
+  status       String
+  timelineJson String
+  createdAt    DateTime @default(now())
+
+  policy InsurancePolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+}
+
+/// Weekly summaries only. CRED never holds raw step data.
+model ActivitySummary {
+  id            String @id @default(cuid())
+  memberId      String
+  weekStart     String
+  avgDailySteps Int
+  activeDays    Int
+  score         Int
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, weekStart])
+}
+
+model WearableLink {
+  memberId    String   @id
+  provider    String
+  linkRef     String   @unique
+  customerRef String
+  linkedAt    DateTime
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model LadderProgress {
+  memberId     String @id
+  /// starter | silver | gold | platinum
+  tier         String
+  onTimeStreak Int
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+model EngineDecision {
+  id              String   @id @default(cuid())
+  memberId        String
+  feature         String
+  /// proactive | member_initiated
+  origin          String
+  triggerEventId  String?
+  /// offer | blocked | help
+  outcome         String
+  reasonsJson     String
+  checksJson      String
+  stressJson      String
+  netBenefitPaise Int?
+  createdAt       DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  offer  Offer?
+
+  @@index([memberId, createdAt])
+}
+
+model Offer {
+  id              String    @id @default(cuid())
+  memberId        String
+  decisionId      String    @unique
+  feature         String
+  origin          String
+  /// awaiting_permission | shown | accepted | declined | expired
+  status          String
+  headline        String
+  subline         String
+  netBenefitPaise Int
+  comparisonJson  String
+  termsJson       String
+  /// Partner quote the offer is based on (lender quoteRef / insurer quoteRef)
+  partnerQuoteRef String?
+  createdAt       DateTime  @default(now())
+  decidedAt       DateTime?
+
+  member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  decision EngineDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  loan     Loan?
+
+  @@index([memberId, status])
+}
+
+model Loan {
+  id                String   @id @default(cuid())
+  memberId          String
+  offerId           String?  @unique
+  applicationRef    String   @unique
+  loanRef           String?  @unique
+  kind              String
+  lenderName        String
+  principalPaise    Int
+  ratePaBps         Int
+  tenureMonths      Int
+  emiPaise          Int
+  processingFeePaise Int
+  /// applied | approved | declined | disbursed | closed
+  status            String
+  createdAt         DateTime @default(now())
+
+  member       Member           @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  offer        Offer?           @relation(fields: [offerId], references: [id])
+  installments EmiInstallment[]
+}
+
+model EmiInstallment {
+  id             String @id @default(cuid())
+  loanId         String
+  n              Int
+  dueDate        String
+  amountPaise    Int
+  principalPaise Int
+  interestPaise  Int
+  /// upcoming | paid | overdue
+  status         String @default("upcoming")
+
+  loan Loan @relation(fields: [loanId], references: [id], onDelete: Cascade)
+
+  @@unique([loanId, n])
+}
+
+/// Repayment help shown to stressed members in place of credit
+model HelpPlan {
+  id          String   @id @default(cuid())
+  memberId    String
+  decisionId  String?
+  kind        String
+  title       String
+  body        String
+  dismissedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+/// Every partner webhook received, for idempotency and the admin log
+model InboundWebhook {
+  eventId     String   @id
+  partner     String
+  type        String
+  signatureOk Boolean
+  payloadJson String
+  memberId    String?
+  receivedAt  DateTime @default(now())
+
+  @@index([receivedAt])
+}
+
+/// Internal event log; feeds the member SSE stream and the admin live view
+model DomainEvent {
+  id          String   @id @default(cuid())
+  memberId    String?
+  type        String
+  payloadJson String
+  createdAt   DateTime @default(now())
+
+  member Member? @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, createdAt])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  memberId    String?
+  /// member | admin | system | partner
+  actor       String
+  action      String
+  target      String?
+  detailsJson String   @default("{}")
+  at          DateTime @default(now())
+
+  member Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
+
+  @@index([action, at])
+}
+
+/// Mirror of the world clock, updated by sim.clock.advanced webhooks
+model SimState {
+  id          Int    @id @default(1)
+  currentDate String
+}

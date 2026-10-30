@@ -36,12 +36,26 @@ packages/
             and seed personas
   ui        shared components + one theme file per brand (cred, admin, shopkart, mockbank,
             upi, aa, insurer, fundhouse)
+  service-kit  Fastify plumbing shared by both services: routes only from contracts
+            (svc.implement; unimplemented contract endpoints answer 501), Zod validation of
+            requests and responses, /status, the DEMO_MODE guard on auth:'demo' endpoints
+scripts/check-boundaries.ts   run by `pnpm test`; fails on rule violations (below)
+tests/e2e/                    `pnpm test:e2e`, against a running `pnpm dev`
 ```
+
+## Conventions (decided in M1)
+
+- Money is integer **paise** everywhere; rates are integer **basis points**. Format only at the UI edge with `formatInr` from `@cred/types`.
+- SQLite fields for enums and JSON are `String`, validated by the Zod enums/schemas in `@cred/types`.
+- Webhooks: envelope `{ id, type, partner, occurredAt, data }`, HMAC-SHA256 over `timestamp.body` (`x-sim-signature`, `x-sim-timestamp`), 5-minute replay window, idempotent by event id.
+- ecosystem-api owns the simulated clock; cred-api mirrors it from `sim.clock.advanced`.
+- Seed: `pnpm seed` runs `prisma db push` then wipes and refills rows. Deterministic IDs (`mem_aarav`, `per_aarav`, …). Never pass `--accept-data-loss` from an agent; Prisma blocks it and the user must decide.
+- Pinned versions: pnpm 10, TypeScript 5.9 (not 7), Prisma 7.10.1, Next 16, Zod 4, Vitest 4.
 
 ## Non-negotiable rules
 
 - **Contracts first.** No endpoint or webhook exists without its schema in `packages/types`. Validate every request and webhook with Zod on both sides.
-- **Front-ends call only their own API**, never a database or the engine directly.
+- **Front-ends call only their own API**, never a database or the engine directly. (`check-boundaries` enforces this, the database split, contract-only routes, the /sim exception and theme-only styling.)
 - **CRED never reads the ecosystem database.** Data reaches CRED only through webhooks or consented pulls (Account Aggregator), as in real life.
 - **Each app uses only its own brand theme** from `packages/ui`. No ad-hoc colours or fonts.
 - **Polish priority:** the CRED app and the core flow get full polish; ShopKart looks like a real store; admin and ecosystem screens look credible and clean.
