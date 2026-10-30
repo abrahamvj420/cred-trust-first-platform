@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Environment
+.env
+.env.*
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Test coverage
+coverage/
+
+# Editor
+.vscode/*
+!.vscode/settings.json
