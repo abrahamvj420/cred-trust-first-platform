@@ -20,9 +20,19 @@ import { Relation, WearableProvider } from '../enums';
 
 const OfferParams = z.object({ offerId: Id });
 
+export const AcceptOption = z.enum(['emi', 'loan']);
+
 export const OfferAcceptRequest = z.object({
+  option: AcceptOption,
   /** Member has seen the key-fact screen. Must be set by an explicit tap. */
   keyFactsAcknowledged: z.literal(true),
+});
+
+/** After accept, the lender sends an e-sign OTP; the member confirms with it. */
+export const OfferAcceptResponse = z.object({
+  offer: Offer,
+  loan: Loan.nullable(),
+  otp: z.object({ sentTo: z.string(), demoOtp: z.string() }),
 });
 
 export const GoalInput = z.object({
@@ -66,6 +76,7 @@ export const productEndpoints = {
     auth: 'member',
     summary: 'Key Fact Statement shown before acceptance',
     params: OfferParams,
+    query: z.object({ option: AcceptOption }),
     response: KeyFactStatement,
   }),
   acceptOffer: endpoint({
@@ -75,7 +86,16 @@ export const productEndpoints = {
     summary: 'Accept after seeing key facts; the partner then decides',
     params: OfferParams,
     body: OfferAcceptRequest,
-    response: z.object({ offer: Offer, loan: Loan.nullable(), policy: InsurancePolicy.nullable() }),
+    response: OfferAcceptResponse,
+  }),
+  confirmOffer: endpoint({
+    method: 'POST',
+    path: '/v1/offers/:offerId/confirm',
+    auth: 'member',
+    summary: 'Confirm with the lender’s e-sign OTP; the loan arrives by webhook',
+    params: OfferParams,
+    body: z.object({ otp: z.string().regex(/^\d{6}$/) }),
+    response: z.object({ offer: Offer, loan: Loan }),
   }),
   declineOffer: endpoint({
     method: 'POST',

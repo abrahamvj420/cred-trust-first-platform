@@ -2,6 +2,9 @@ import { createEcosystemDb } from '@cred/db/ecosystem';
 import { resetEcosystem } from '@cred/db/seed';
 import { createService, handlers, HttpError, isDemoMode, loadRootEnv, requireEnv } from '@cred/service-kit';
 import { ecosystemApi } from '@cred/types';
+import { lenderHandlers } from './lender';
+import { createOutbox } from './outbox';
+import { ecosystemPagesUrl, railsHandlers } from './rails';
 
 loadRootEnv();
 const db = createEcosystemDb();
@@ -31,6 +34,9 @@ const svc = createService({
   },
 });
 
+const outbox = createOutbox(db, svc.app.log);
+const ctx = { db, outbox, log: svc.app.log, pagesUrl: ecosystemPagesUrl() };
+
 const h = handlers()
   .on(ecosystemApi.platform.status, () => svc.status())
   .on(ecosystemApi.sim.clock, async () => {
@@ -40,8 +46,12 @@ const h = handlers()
   })
   .on(ecosystemApi.sim.reset, async () => {
     await resetEcosystem(db);
+    await db.webhookOutbox.deleteMany();
     return { ok: true as const };
   });
+
+railsHandlers(ctx, h);
+lenderHandlers(ctx, h);
 
 svc.implement(ecosystemApi, h.map);
 

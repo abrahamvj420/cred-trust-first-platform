@@ -92,3 +92,20 @@ export function cardVsEmi(principalPaise: number, months: number, ratePaBps: num
   const emi = emiCost(principalPaise, months, ratePaBps, feeBps);
   return { card, emi, savingPaise: card.totalCostPaise - emi.totalCostPaise };
 }
+
+/**
+ * Annual percentage rate including fees: the monthly IRR of
+ * (principal − fee − GST on fee) received against `months` × EMI paid, × 12.
+ */
+export function aprBps(principalPaise: number, emiPaise: number, months: number, upfrontCostsPaise: number): number {
+  const received = principalPaise - upfrontCostsPaise;
+  const pv = (r: number) => (r === 0 ? emiPaise * months : (emiPaise * (1 - (1 + r) ** -months)) / r);
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    if (pv(mid) > received) lo = mid;
+    else hi = mid;
+  }
+  return Math.round(((lo + hi) / 2) * 12 * 10_000);
+}

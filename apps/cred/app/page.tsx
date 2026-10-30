@@ -1,9 +1,11 @@
-import { Placeholder } from '@cred/ui';
+'use client';
 
-export default function Home() {
-  return (
-    <Placeholder brand="Member app" title="Rewards for paying on time. Offers only when you gain." next="M2 (golden path) and M4 (full app shell)">
-      Home, cards, bill pay, UPI, rewards and live offers will live here.
-    </Placeholder>
-  );
+import { useToken } from '@/lib/api';
+import { Home } from './_components/Home';
+import { Login } from './_components/Login';
+
+export default function Page() {
+  const token = useToken();
+  if (token === undefined) return null;
+  return token ? <Home token={token} /> : <Login />;
 }

@@ -40,7 +40,8 @@ packages/
             (svc.implement; unimplemented contract endpoints answer 501), Zod validation of
             requests and responses, /status, the DEMO_MODE guard on auth:'demo' endpoints
 scripts/check-boundaries.ts   run by `pnpm test`; fails on rule violations (below)
-tests/e2e/                    `pnpm test:e2e`, against a running `pnpm dev`
+tests/e2e/                    `pnpm test:e2e`: starts its own cred-api + ecosystem-api on ports 4900/4910
+                              with throwaway databases (never touches dev data; no `pnpm dev` needed)
 ```
 
 ## Conventions (decided in M1)
@@ -50,6 +51,13 @@ tests/e2e/                    `pnpm test:e2e`, against a running `pnpm dev`
 - Webhooks: envelope `{ id, type, partner, occurredAt, data }`, HMAC-SHA256 over `timestamp.body` (`x-sim-signature`, `x-sim-timestamp`), 5-minute replay window, idempotent by event id.
 - ecosystem-api owns the simulated clock; cred-api mirrors it from `sim.clock.advanced`.
 - Seed: `pnpm seed` runs `prisma db push` then wipes and refills rows. Deterministic IDs (`mem_aarav`, `per_aarav`, …). Never pass `--accept-data-loss` from an agent; Prisma blocks it and the user must decide.
+- Engine check order (every evaluated check is saved on the decision, offer or not): signal → permission → stress → offer cap → affordability → net benefit. Engine is pure: cred-api builds a `MemberSnapshot`, calls the feature, fetches partner quotes only if asked, calls again.
+- Smart Savings: if never asked, the engine still evaluates and saves the offer as `awaiting_permission`; the app shows the one-time permission card with the offer's rupee value. "Not now" declines that offer and is never asked again proactively.
+- Offers show every option side by side, including "pay in full: ₹0" for honesty. Net benefit is measured against keeping it on the card for 12 months (the savings method).
+- "No thanks" is final for that trigger, and the same feature stays quiet for 30 sim days. One active offer; at most 3 proactive offers per sim month.
+- Lender quotes are anonymous (no member data). Member details go to the lender only when they accept, after the key-fact screen; the lender then sends an e-sign OTP.
+- Demo OTPs: any 6 digits are accepted; the real demo code is shown on screen.
+- Rohan's limit is ₹2.5L so a ₹1.5L purchase can clear the bank; it takes him to ~96% utilisation (stress).
 - Pinned versions: pnpm 10, TypeScript 5.9 (not 7), Prisma 7.10.1, Next 16, Zod 4, Vitest 4.
 
 ## Non-negotiable rules

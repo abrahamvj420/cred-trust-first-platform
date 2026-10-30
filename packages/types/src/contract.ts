@@ -45,6 +45,9 @@ type Infer<T> = T extends z.ZodType ? z.infer<T> : never;
 export type EndpointParams<E> = E extends { params: infer P } ? Infer<P> : Record<string, never>;
 export type EndpointQuery<E> = E extends { query: infer Q } ? Infer<Q> : Record<string, never>;
 export type EndpointBody<E> = E extends { body: infer B } ? Infer<B> : undefined;
+/** Body as a caller writes it (before defaults). */
+export type EndpointBodyInput<E> = E extends { body: infer B extends z.ZodType } ? z.input<B> : undefined;
+export type EndpointQueryInput<E> = E extends { query: infer Q extends z.ZodType } ? z.input<Q> : undefined;
 /** Parsed (output) type of the response. */
 export type EndpointResponse<E> = E extends { response: infer R } ? Infer<R> : never;
 /** What a handler may return: the schema's input type (defaults applied on parse). */

@@ -80,7 +80,7 @@ Every app and service answers `GET /status`. Once the control room shows all six
 
 ```bash
 pnpm test              # unit tests + boundary checks
-pnpm test:e2e          # cross-service tests (needs `pnpm dev` running)
+pnpm test:e2e          # golden-path tests; starts its own APIs on 4900/4910 with throwaway data
 pnpm typecheck
 ```
 
@@ -98,7 +98,7 @@ pnpm typecheck
 | Priya Nair | Family of five, employer cover plus a floater, parents uncovered, renewal due | 4, 6 |
 | Sneha Kapoor | ₹25L across FDs, funds and gold; saving for a house | 2, 7 |
 | Kabir Singh | Newer member, one partial bill after his wedding | 3, 5, 8 |
-| Rohan Das | 90% utilisation, minimum-only payments: gets help, not credit | Stress case |
+| Rohan Das | Minimum-only payments; the laptop would take him to ~96% of his limit: gets help, not credit | Stress case |
 
 ## Demo flow
 

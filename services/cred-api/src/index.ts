@@ -3,10 +3,16 @@ import { resetCred } from '@cred/db/seed';
 import { createService, handlers, HttpError, isDemoMode, loadRootEnv, notFound, requireEnv } from '@cred/service-kit';
 import { credApi, DEMO_PERSONAS, PersonaKey, WEBHOOK_HEADERS, type Member } from '@cred/types';
 import { verifyWebhook } from '@cred/types/signing';
+import { adminHandlers } from './admin';
+import { createCtx } from './context';
+import { Hub } from './hub';
+import { memberHandlers } from './member';
 import { bearer, issueToken, verifyToken } from './session';
+import { ingestWebhook } from './webhooks';
 
 loadRootEnv();
 const db = createCredDb();
+const hub = new Hub();
 
 const toMember = (m: { id: string; personaKey: string; name: string; phone: string; city: string; memberSince: string }): Member => ({
   id: m.id,
@@ -32,11 +38,18 @@ const svc = createService({
     webhook: (req) => {
       const header = (h: string) => req.headers[h] as string | undefined;
       const result = verifyWebhook(requireEnv('WEBHOOK_SECRET_ECOSYSTEM'), header(WEBHOOK_HEADERS.timestamp), req.rawBody ?? '', header(WEBHOOK_HEADERS.signature));
-      if (!result.ok) throw new HttpError(401, 'bad_signature', `Webhook signature ${result.reason}`);
+      if (!result.ok) {
+        const eventId = header(WEBHOOK_HEADERS.eventId) ?? 'unknown';
+        hub.admin({ type: 'webhook.received', data: { eventId, type: 'unverified', signatureOk: false, duplicate: false } });
+        void db.auditLog.create({ data: { memberId: null, actor: 'system', action: 'webhook.rejected', target: eventId, detailsJson: JSON.stringify({ reason: result.reason }) } });
+        throw new HttpError(401, 'bad_signature', `Webhook signature ${result.reason}`);
+      }
       return { partner: 'ecosystem' as const };
     },
   },
 });
+
+const ctx = createCtx(db, hub, svc.app.log);
 
 const h = handlers()
   .on(credApi.platform.status, () => svc.status())
@@ -50,10 +63,19 @@ const h = handlers()
     await db.auditLog.create({ data: { memberId: m.id, actor: 'member', action: 'session.started', target: 'demo-login' } });
     return { token: issueToken({ memberId: m.id, personaKey: member.personaKey, issuedAt: new Date().toISOString() }), member };
   })
+  .on(credApi.platform.webhook, ({ body }) => ingestWebhook(ctx, body))
+  .on(credApi.platform.simSwitchPersona, async ({ body }) => {
+    const m = await db.member.findMany();
+    for (const x of m) hub.member(x.id, { type: 'demo.persona_switched', data: { personaKey: body.personaKey } });
+    return { ok: true as const };
+  })
   .on(credApi.platform.simReset, async () => {
     await resetCred(db);
     return { ok: true as const };
   });
+
+memberHandlers(ctx, h);
+adminHandlers(ctx, h);
 
 svc.implement(credApi, h.map);
 

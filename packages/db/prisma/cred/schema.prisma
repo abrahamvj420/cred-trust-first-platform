@@ -317,6 +317,8 @@ model EngineDecision {
   checksJson      String
   stressJson      String
   netBenefitPaise Int?
+  /// Simulated calendar date of the decision
+  simDate         String   @default("")
   createdAt       DateTime @default(now())
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
@@ -337,11 +339,17 @@ model Offer {
   subline         String
   netBenefitPaise Int
   comparisonJson  String
+  optionsJson     String    @default("[]")
   termsJson       String
-  /// Partner quote the offer is based on (lender quoteRef / insurer quoteRef)
-  partnerQuoteRef String?
+  triggerJson     String?
+  /// The trigger (e.g. card transaction ref) — an offer is never repeated for it
+  triggerRef      String?
+  /// Partner quote per acceptable option, e.g. {"emi":"q_..","loan":"q_.."}
+  quoteRefsJson   String    @default("{}")
+  simDate         String    @default("")
   createdAt       DateTime  @default(now())
   decidedAt       DateTime?
+  decidedSimDate  String?
 
   member   Member         @relation(fields: [memberId], references: [id], onDelete: Cascade)
   decision EngineDecision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
@@ -357,6 +365,8 @@ model Loan {
   applicationRef    String   @unique
   loanRef           String?  @unique
   kind              String
+  /// emi | loan: which offer option was accepted
+  option            String?
   lenderName        String
   principalPaise    Int
   ratePaBps         Int
@@ -396,6 +406,8 @@ model HelpPlan {
   kind        String
   title       String
   body        String
+  monthlyInterestPaise Int?
+  simDate     String   @default("")
   dismissedAt DateTime?
   createdAt   DateTime @default(now())
 
@@ -408,6 +420,7 @@ model InboundWebhook {
   partner     String
   type        String
   signatureOk Boolean
+  duplicateCount Int   @default(0)
   payloadJson String
   memberId    String?
   receivedAt  DateTime @default(now())

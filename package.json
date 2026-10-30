@@ -24,6 +24,7 @@
     "typescript": "5.9.3",
     "vitest": "^4.1.12",
     "@cred/types": "workspace:*",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "@cred/engine": "workspace:*"
   }
 }

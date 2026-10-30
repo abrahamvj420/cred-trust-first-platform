@@ -131,6 +131,14 @@ export const adminEndpoints = {
     query: MemberFilter,
     response: z.object({ entries: z.array(AuditEntry) }),
   }),
+  loans: endpoint({
+    method: 'GET',
+    path: '/admin/v1/loans',
+    auth: 'admin',
+    summary: 'Loans booked through CRED',
+    query: MemberFilter,
+    response: z.object({ loans: z.array(Loan.extend({ memberId: Id, memberName: z.string() })) }),
+  }),
   webhooks: endpoint({
     method: 'GET',
     path: '/admin/v1/webhooks',
@@ -139,7 +147,7 @@ export const adminEndpoints = {
     query: MemberFilter,
     response: z.object({
       webhooks: z.array(
-        z.object({ eventId: Id, type: z.string(), partner: z.string(), signatureOk: z.boolean(), receivedAt: IsoDateTime }),
+        z.object({ eventId: Id, type: z.string(), partner: z.string(), signatureOk: z.boolean(), duplicate: z.boolean(), receivedAt: IsoDateTime }),
       ),
     }),
   }),

@@ -120,7 +120,7 @@ const kabir: PersonaFixture = {
   },
 };
 
-/** Under stress: high utilisation, minimum-only payments, falling balance. Gets help, not credit. */
+/** Under stress: minimum-only payments, falling balance; a big purchase takes utilisation past 90%. Gets help, not credit. */
 const rohan: PersonaFixture = {
   key: 'rohan',
   dob: '1999-01-30',
@@ -131,7 +131,8 @@ const rohan: PersonaFixture = {
   card: {
     network: 'visa',
     last4: '9013',
-    limitPaise: rupees(1_00_000),
+    // ₹2.5L so a ₹1.5L purchase can clear the bank; it takes him to ~96% utilisation
+    limitPaise: rupees(2_50_000),
     billingDay: 15,
     dueDay: 5,
     monthlySpendPaise: rupees(20_000),

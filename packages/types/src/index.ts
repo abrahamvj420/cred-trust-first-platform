@@ -10,3 +10,4 @@ export * from './webhooks/events';
 export * from './events/sse';
 export * from './format';
 export * from './apps';
+export * from './client';

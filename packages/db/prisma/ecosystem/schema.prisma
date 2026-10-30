@@ -181,6 +181,7 @@ model GatewayPayment {
   returnUrl   String
   shopperPhone String
   upiTxnId    String?  @unique
+  cardAccountId String?
   createdAt   DateTime @default(now())
 
   merchant Merchant @relation(fields: [merchantId], references: [id])
@@ -258,7 +259,8 @@ model Lender {
 model LoanApplication {
   id                 String   @id @default(cuid())
   lenderId           String
-  personId           String
+  /// Null while the quote is anonymous; set when the member applies
+  personId           String?
   quoteRef           String   @unique
   /// purchase_emi | personal_loan | loan_against_funds | balance_switch_emi
   kind               String
@@ -271,10 +273,12 @@ model LoanApplication {
   status             String   @default("quoted")
   clientRef          String
   kfsAcknowledgedAt  DateTime?
+  otp                String?
+  verifiedIncomePaise Int?
   createdAt          DateTime @default(now())
 
   lender Lender       @relation(fields: [lenderId], references: [id])
-  person Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+  person Person?      @relation(fields: [personId], references: [id], onDelete: Cascade)
   loan   LoanAccount?
 }
 

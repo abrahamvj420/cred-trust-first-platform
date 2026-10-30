@@ -227,6 +227,22 @@ export const AvailabilityTerms = z.object({
 export const OfferTerms = z.discriminatedUnion('kind', [LoanTerms, InsuranceTerms, AvailabilityTerms]);
 export type OfferTerms = z.infer<typeof OfferTerms>;
 
+/** One row of the side-by-side comparison (pay in full / card / EMI / loan). */
+export const OfferOption = z.object({
+  key: z.enum(['pay_in_full', 'card_revolve', 'emi', 'loan']),
+  label: z.string(),
+  totalCostPaise: NonNegativePaise,
+  monthlyPaise: NonNegativePaise.nullable(),
+  lines: z.array(BenefitLine),
+  /** Only EMI/loan options can be accepted. */
+  acceptable: z.boolean(),
+  recommended: z.boolean(),
+  note: z.string().nullable(),
+  terms: LoanTerms.nullable(),
+});
+export type OfferOption = z.infer<typeof OfferOption>;
+export type AcceptableOptionKey = 'emi' | 'loan';
+
 export const Offer = z.object({
   id: Id,
   feature: FeatureKey,
@@ -237,7 +253,9 @@ export const Offer = z.object({
   /** The member's gain in paise. Always > 0 for a shown offer. */
   netBenefitPaise: PositivePaise,
   comparison: BenefitComparison,
+  options: z.array(OfferOption),
   terms: OfferTerms,
+  trigger: z.object({ merchant: z.string(), amountPaise: PositivePaise }).nullable(),
   createdAt: IsoDateTime,
   decidedAt: IsoDateTime.nullable(),
 });
@@ -246,6 +264,7 @@ export type Offer = z.infer<typeof Offer>;
 /** Key Fact Statement shown before any acceptance (RBI-style). */
 export const KeyFactStatement = z.object({
   offerId: Id,
+  option: z.enum(['emi', 'loan']),
   lenderOrInsurer: z.string(),
   items: z.array(z.object({ label: z.string(), value: z.string() })),
   annualPercentageRateBps: Bps.nullable(),
@@ -260,6 +279,7 @@ export const HelpPlan = z.object({
   kind: z.enum(['repayment_plan', 'spend_alerts', 'talk_to_us']),
   title: z.string(),
   body: z.string(),
+  monthlyInterestPaise: NonNegativePaise.nullable(),
   createdAt: IsoDateTime,
 });
 export type HelpPlan = z.infer<typeof HelpPlan>;
