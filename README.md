@@ -40,26 +40,55 @@ pnpm + Turborepo monorepo, TypeScript everywhere.
 
 Shared packages: `types` (contracts), `engine` (offer engine + savings maths), `db` (Prisma schemas + seed personas), `ui` (components + one theme per brand), `service-kit` (contract-only Fastify routing, validation, `/status`, DEMO_MODE guard).
 
-## Setup
+## Setup (fresh clone)
 
-Requires Node 22+ and pnpm 10.
+### Prerequisites
+
+- **Node.js 22.12 or later** (developed on Node 26). Check with `node -v`.
+- **pnpm 10** (the repo pins `pnpm@10.34.9` in `package.json`). Install with `npm install -g pnpm@10`, or run `corepack enable` if your Node version still ships corepack.
+- macOS, Linux or WSL. SQLite comes with the `better-sqlite3` package, so there is nothing else to install.
+
+### Steps
 
 ```bash
-pnpm install          # also generates both Prisma clients
-cp .env.example .env  # local demo secrets; DEMO_MODE=true
-pnpm seed             # create both databases and load the demo personas
+git clone https://github.com/abrahamvj420/cred-trust-first-platform.git
+cd cred-trust-first-platform
+
+cp .env.example .env   # local demo secrets (placeholders), DEMO_MODE=true
+pnpm install           # installs everything and generates both Prisma clients
+pnpm seed              # creates cred.db and ecosystem.db and loads the demo personas
+pnpm dev               # starts all four apps and both APIs
 ```
 
-## Running locally
+`pnpm seed` prints a one-line summary per persona when it finishes. Run it again at any time to reset all data to the demo starting point.
+
+### URLs
+
+| What | URL | Port |
+|---|---|---|
+| CRED member app | http://localhost:3000 | 3000 |
+| CRED console (admin) | http://localhost:3001 | 3001 |
+| Demo control room | http://localhost:3001/demo | 3001 |
+| ShopKart store | http://localhost:3002 | 3002 |
+| Ecosystem (bank, UPI, AA, insurer, fund house) | http://localhost:3003 | 3003 |
+| cred-api | http://localhost:4000/status | 4000 |
+| ecosystem-api | http://localhost:4100/status | 4100 |
+
+Every app and service answers `GET /status`. Once the control room shows all six green, the setup works.
+
+### Other commands
 
 ```bash
-pnpm dev              # starts all apps and services on the ports above
-pnpm test             # unit tests + boundary checks
-pnpm test:e2e         # cross-service tests (needs `pnpm dev` running)
+pnpm test              # unit tests + boundary checks
+pnpm test:e2e          # cross-service tests (needs `pnpm dev` running)
 pnpm typecheck
 ```
 
-Every app and service answers `GET /status`. The control room at http://localhost:3001/demo shows them all.
+### Troubleshooting
+
+- **Port already in use:** stop whatever is using ports 3000–3003, 4000 or 4100. The ports are fixed by design.
+- **`Cannot find module './generated/...'`:** run `pnpm db:generate`. The Prisma clients are generated and not committed.
+- **Fonts fail to load on first run:** the apps load Google Fonts via `next/font`, which needs internet access the first time.
 
 ### Demo personas
 

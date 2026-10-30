@@ -34,6 +34,8 @@ coverage/
 # SQLite databases and generated Prisma clients
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 packages/db/src/generated/
 
 # Next.js
