@@ -19,6 +19,16 @@ describe('brand themes', () => {
     it(`${t.id}: muted text is readable on bg`, () => {
       expect(contrast(t.colors.muted, t.colors.bg)).toBeGreaterThanOrEqual(4.5);
     });
+    it(`${t.id}: muted text is readable on every surface`, () => {
+      expect(contrast(t.colors.muted, t.colors.surface)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(t.colors.muted, t.colors.raised)).toBeGreaterThanOrEqual(4.5);
+    });
+    it(`${t.id}: accent and status colours are readable as text`, () => {
+      for (const c of [t.colors.accent, t.colors.positive, t.colors.negative, t.colors.warning]) {
+        expect(contrast(c, t.colors.bg)).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(c, t.colors.surface)).toBeGreaterThanOrEqual(4.5);
+      }
+    });
     it(`${t.id}: accent buttons are legible`, () => {
       expect(contrast(t.colors.accentText, t.colors.accent)).toBeGreaterThanOrEqual(4.5);
     });

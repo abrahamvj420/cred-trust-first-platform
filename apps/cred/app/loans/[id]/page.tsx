@@ -1,48 +1,85 @@
 'use client';
 
-import { credApi, formatBps, type Loan } from '@cred/types';
-import { Money, Surface } from '@cred/ui';
+import { credApi, formatBps } from '@cred/types';
+import { Badge, Card, EmptyState, ErrorState, LoadingScreen, Money, SectionHeader } from '@cred/ui';
 import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { api, errorText } from '@/lib/api';
+import { longDate, shortDate } from '@/lib/format';
+import { useApi } from '@/lib/live';
+import { Screen } from '../../_shell/Screen';
 
 export default function LoanPage() {
   const { id } = useParams<{ id: string }>();
-  const [loan, setLoan] = useState<Loan | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    api(credApi.products.loan, { params: { loanId: id } }).then((r) => setLoan(r.loan), (e) => setError(errorText(e)));
-  }, [id]);
-
-  if (error) return <p className="p-6 text-negative">{error}</p>;
-  if (!loan) return <p className="p-6 text-muted">Loading…</p>;
+  const q = useApi(credApi.products.loan, { params: { loanId: id } });
+  const l = q.data?.loan;
+  const next = l?.schedule.find((i) => i.status !== 'paid');
   return (
-    <main className="mx-auto flex max-w-xl flex-col gap-5 px-4 py-6">
-      <a href="/" className="text-sm text-muted">← Home</a>
-      <h1 className="text-2xl font-semibold">Your EMI with {loan.lenderName}</h1>
-      <Surface className="grid grid-cols-2 gap-2 text-sm">
-        <span className="text-muted">Amount</span><Money paise={loan.principalPaise} className="text-right" />
-        <span className="text-muted">Rate</span><span className="text-right">{formatBps(loan.ratePaBps)} a year</span>
-        <span className="text-muted">Monthly EMI</span><Money paise={loan.emiPaise} className="text-right font-semibold" />
-        <span className="text-muted">Status</span><span className="text-right">{loan.status}</span>
-      </Surface>
-      <table className="w-full text-sm tabular">
-        <thead className="text-left text-muted">
-          <tr><th className="py-2">#</th><th>Due</th><th className="text-right">EMI</th><th className="text-right">Principal</th><th className="text-right">Interest</th></tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {loan.schedule.map((i) => (
-            <tr key={i.n}>
-              <td className="py-2">{i.n}</td>
-              <td>{i.dueDate}</td>
-              <td className="text-right"><Money paise={i.amountPaise} /></td>
-              <td className="text-right"><Money paise={i.principalPaise} /></td>
-              <td className="text-right"><Money paise={i.interestPaise} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {loan.schedule.length === 0 ? <p className="text-sm text-muted">The schedule appears once {loan.lenderName} disburses.</p> : null}
-    </main>
+    <Screen title="EMI schedule" back="/loans">
+      {q.error && !l ? (
+        <ErrorState message={q.error} onRetry={q.reload} />
+      ) : !l ? (
+        <LoadingScreen label="Loading loan" />
+      ) : (
+        <>
+          <Card elevation={2} className="flex flex-col gap-3">
+            <div className="flex items-start justify-between">
+              <p className="text-callout text-muted">{l.lenderName}</p>
+              <Badge tone={l.status === 'disbursed' ? 'positive' : 'neutral'}>{l.status === 'disbursed' ? 'Active' : l.status}</Badge>
+            </div>
+            <div>
+              <p className="text-caption text-muted">Monthly EMI</p>
+              <Money paise={l.emiPaise} size="display" />
+              {next ? <p className="text-caption text-muted">Next due {longDate(next.dueDate)}</p> : null}
+            </div>
+            <dl className="grid grid-cols-3 gap-3 border-t border-border pt-3 text-caption">
+              <div>
+                <dt className="text-muted">Amount</dt>
+                <dd className="text-headline"><Money paise={l.principalPaise} /></dd>
+              </div>
+              <div>
+                <dt className="text-muted">Rate</dt>
+                <dd className="text-headline">{formatBps(l.ratePaBps)}</dd>
+              </div>
+              <div>
+                <dt className="text-muted">Tenure</dt>
+                <dd className="text-headline">{l.tenureMonths} mo</dd>
+              </div>
+            </dl>
+          </Card>
+          <section className="flex flex-col gap-3">
+            <SectionHeader title="Instalments" />
+            {l.schedule.length === 0 ? (
+              <EmptyState icon="list" title="Schedule on its way" body={`It appears once ${l.lenderName} disburses.`} />
+            ) : (
+              <div className="overflow-hidden rounded-lg border border-border bg-surface shadow-e1">
+                <table className="w-full text-callout">
+                  <caption className="sr-only">EMI schedule</caption>
+                  <thead className="text-caption text-muted">
+                    <tr>
+                      <th scope="col" className="px-4 py-3 text-left font-normal">Due</th>
+                      <th scope="col" className="py-3 text-right font-normal">Principal</th>
+                      <th scope="col" className="py-3 text-right font-normal">Interest</th>
+                      <th scope="col" className="px-4 py-3 text-right font-normal">EMI</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {l.schedule.map((i) => (
+                      <tr key={i.n} className={i === next ? 'bg-raised' : ''}>
+                        <td className="px-4 py-3">
+                          {shortDate(i.dueDate)}
+                          {i === next ? <span className="block text-caption text-accent">Next</span> : null}
+                        </td>
+                        <td className="py-3 text-right"><Money paise={i.principalPaise} /></td>
+                        <td className="py-3 text-right text-muted"><Money paise={i.interestPaise} /></td>
+                        <td className="px-4 py-3 text-right font-semibold"><Money paise={i.amountPaise} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+    </Screen>
   );
 }

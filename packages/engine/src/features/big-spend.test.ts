@@ -3,6 +3,7 @@ import { cardVsEmi } from '../finance';
 import { DEFAULT_RULES } from '../rules';
 import type { MemberSnapshot, QuoteInput } from '../snapshot';
 import { fullPayer, laptop, quotesFor, stressed } from '../test/fixtures';
+import { BANNED_MEMBER_WORDS, memberFacingStrings } from '../member-copy';
 import { assessCarry, evaluateBigSpend, type EvaluateOptions } from './big-spend';
 
 const decide = (s: MemberSnapshot, t = laptop, opts: EvaluateOptions = {}, quotes?: QuoteInput[]) => {
@@ -45,7 +46,7 @@ describe('Rule: permission', () => {
   it('withdrawn → blocked: no_permission, explained', () => {
     const d = decide(fullPayer({ smartSavings: 'withdrawn' }));
     expect(d).toMatchObject({ outcome: 'blocked', reasons: ['no_permission'], offer: null });
-    expect(d.explanation).toMatch(/turned Smart Savings off/);
+    expect(d.explanation).toBe('Smart Savings is off, so we’re not looking for savings for you. You can turn it on any time in Permissions.');
   });
 
   it('"Not now" is not re-asked for 90 days, then asked again', () => {
@@ -67,7 +68,7 @@ describe('Rule: stress → help, not credit', () => {
     expect(d).toMatchObject({ outcome: 'help', reasons: ['stress_signal'], offer: null });
     expect(d.stressSignals).toEqual(expect.arrayContaining(['minimum_only_payments', 'high_utilisation']));
     expect(d.help!.monthlyInterestPaise).toBeGreaterThan(0);
-    expect(d.explanation).toMatch(/No credit offer/);
+    expect(d.explanation).toBe('We’ll hold off on new credit while you clear your current balance. Here’s a plan that could help.');
   });
 
   it('applies even when the member asks', () => {
@@ -87,6 +88,7 @@ describe('Rule: affordability', () => {
   it('EMIs above 40% of verified income → above_affordability', () => {
     const d = decide(fullPayer({ verifiedMonthlyIncomePaise: 40_000_00, existingEmiPaise: 5_000_00 }));
     expect(d).toMatchObject({ outcome: 'blocked', reasons: ['above_affordability'] });
+    expect(d.explanation).toBe('This would stretch your monthly budget, so we’re not suggesting a loan.');
   });
 
   it('quotes that break affordability are dropped, never offered', () => {
@@ -111,7 +113,7 @@ describe('Rule: likely to carry', () => {
     const d = decide(s, { transactionRef: 't2', merchant: 'ShopKart', amountPaise: 38_500_00 });
     expect(d).toMatchObject({ outcome: 'blocked', reasons: ['can_pay_in_full'], offer: null });
     expect(lastCheck(d).check).toBe('likely_to_carry');
-    expect(d.explanation).toMatch(/convert this purchase to EMI yourself/);
+    expect(d.explanation).toMatch(/^Looks like you’ll clear this by the due date, so there’s nothing to save\./);
   });
 
   it('shared salary with room to spare → can pay in full, even for a big purchase', () => {
@@ -184,10 +186,24 @@ describe('Explainability', () => {
     ['can pay in full', decide(fullPayer({ verifiedMonthlyIncomePaise: 2_10_000_00 }))],
     ['net benefit', decide(fullPayer(), laptop, {}, quotesFor(laptop.amountPaise, 9000, 9500))],
   ];
-  for (const [name, d] of cases) {
-    it(`${name}: has a plain-English why with rupee amounts where relevant`, () => {
+  const more: [string, ReturnType<typeof decide>][] = [
+    ['re-ask wait', decide(fullPayer({ smartSavings: 'never', smartSavingsLastAskedOn: '2026-10-20' }))],
+    ['one at a time', decide(fullPayer({ offers: { activeOfferId: 'x', proactiveThisMonth: 0, offeredTriggerRefs: [], declines: [] } }))],
+    ['monthly cap', decide(fullPayer({ offers: { activeOfferId: null, proactiveThisMonth: 3, offeredTriggerRefs: [], declines: [] } }))],
+    ['cooldown', decide(fullPayer({ offers: { activeOfferId: null, proactiveThisMonth: 0, offeredTriggerRefs: [], declines: [{ feature: 'big_spend_support', decidedOn: '2026-10-25' }] } }))],
+    ['already offered', decide(fullPayer({ offers: { activeOfferId: null, proactiveThisMonth: 0, offeredTriggerRefs: ['t1'], declines: [] } }))],
+    ['income cap', decide(fullPayer({ verifiedMonthlyIncomePaise: 40_000_00 }))],
+    ['member below minimum', decide(fullPayer(), { ...laptop, amountPaise: 1_000_00 }, { origin: 'member_initiated' })],
+    ['no quotes', decide(fullPayer(), laptop, {}, [])],
+    ['member stressed', decide(stressed(), laptop, { origin: 'member_initiated' })],
+  ];
+  for (const [name, d] of [...cases, ...more]) {
+    it(`${name}: has a plain-English why`, () => {
       expect(d.explanation.length).toBeGreaterThan(30);
       expect(d.explanation).not.toMatch(/_|bps|undefined|NaN/);
+    });
+    it(`${name}: no member-facing string says stress, risk or blocked`, () => {
+      for (const text of memberFacingStrings(d)) expect(text).not.toMatch(BANNED_MEMBER_WORDS);
     });
   }
 });

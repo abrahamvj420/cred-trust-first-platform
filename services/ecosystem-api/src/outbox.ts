@@ -48,10 +48,11 @@ export function createOutbox(db: EcosystemDb, log: Logger) {
         for (const row of due) {
           try {
             await deliver(row.id, row.payloadJson);
-            await db.webhookOutbox.update({ where: { id: row.id }, data: { status: 'delivered', attempts: { increment: 1 } } });
+            // updateMany: the row may have been wiped by a demo reset mid-delivery
+            await db.webhookOutbox.updateMany({ where: { id: row.id }, data: { status: 'delivered', attempts: { increment: 1 } } });
           } catch (e) {
             const attempts = row.attempts + 1;
-            await db.webhookOutbox.update({
+            await db.webhookOutbox.updateMany({
               where: { id: row.id },
               data: {
                 attempts,
@@ -65,6 +66,9 @@ export function createOutbox(db: EcosystemDb, log: Logger) {
           }
         }
       } while (again);
+    } catch (e) {
+      // Never let delivery bookkeeping take the service down; the next tick retries.
+      log.error({ err: String(e) }, 'webhook outbox flush failed');
     } finally {
       running = false;
     }

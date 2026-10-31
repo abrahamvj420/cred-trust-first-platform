@@ -132,10 +132,10 @@ export function evaluateBigSpend(s: MemberSnapshot, trigger: CardPurchaseTrigger
   if (origin === 'proactive') {
     const threshold = bigSpendThresholdPaise(s, rules);
     if (s.offers.offeredTriggerRefs.includes(trigger.transactionRef)) {
-      return d.stop('signal', 'already_offered', 'This purchase already had an offer; offers are never repeated.', 'No new suggestion: we already showed you options for this purchase, and we never repeat an offer.');
+      return d.stop('signal', 'already_offered', 'This purchase already had an offer; offers are never repeated.', 'We’ve already shown you options for this purchase, and we don’t repeat them.');
     }
     if (amount < threshold) {
-      return d.stop('signal', 'no_signal', `No signal: ${amt} is below the ${formatInr(threshold)} threshold.`, `No suggestion: ${amt} at ${trigger.merchant} is within your usual spending.`);
+      return d.stop('signal', 'no_signal', `No signal: ${amt} is below the ${formatInr(threshold)} threshold.`, `${amt} at ${trigger.merchant} looks like everyday spending, so there was nothing to suggest.`);
     }
     d.pass('signal', `${amt} at ${trigger.merchant} is above ${formatInr(threshold)}.`);
   } else {
@@ -154,7 +154,7 @@ export function evaluateBigSpend(s: MemberSnapshot, trigger: CardPurchaseTrigger
   if (amount > s.ladder.limitPaise) {
     return noCredit(
       `${amt} is above the ${s.ladder.tier} tier limit of ${formatInr(s.ladder.limitPaise)}.`,
-      `No credit offer: ${amt} is more than we can responsibly offer you today (your ${s.ladder.tier} tier allows up to ${formatInr(s.ladder.limitPaise)}).`,
+      'This would stretch your monthly budget, so we’re not suggesting a loan.',
     );
   }
   const incomeCap = s.verifiedMonthlyIncomePaise === null ? null : Math.round((s.verifiedMonthlyIncomePaise * rules.maxEmiToIncomeBps) / 10_000);
@@ -163,7 +163,7 @@ export function evaluateBigSpend(s: MemberSnapshot, trigger: CardPurchaseTrigger
     if (worstEmi + s.existingEmiPaise > incomeCap) {
       return noCredit(
         `EMIs of ${formatInr(worstEmi + s.existingEmiPaise)} would exceed ${formatBps(rules.maxEmiToIncomeBps)} of income (${formatInr(incomeCap)}).`,
-        `No credit offer: the monthly EMI would take your total EMIs above ${formatBps(rules.maxEmiToIncomeBps)} of your verified income.`,
+        'This would stretch your monthly budget, so we’re not suggesting a loan.',
       );
     }
   }
@@ -178,7 +178,7 @@ export function evaluateBigSpend(s: MemberSnapshot, trigger: CardPurchaseTrigger
         'likely_to_carry',
         'can_pay_in_full',
         `Can pay in full: ${basis}.`,
-        `No suggestion: your next bill would be about ${formatInr(carry.projectedBillPaise)}, in line with what you usually repay, so you’ll likely pay it in full, which costs nothing. You can still convert this purchase to EMI yourself from the transaction.`,
+        `Looks like you’ll clear this by the due date, so there’s nothing to save. If you’d still like to spread it out, tap Convert to EMI on the purchase.`,
       );
     }
     d.pass('likely_to_carry', `Likely to carry: ${basis}.`);
@@ -196,8 +196,8 @@ export function evaluateBigSpend(s: MemberSnapshot, trigger: CardPurchaseTrigger
   });
   if (!usable.length) {
     return quotes.length
-      ? noCredit('No partner quote fits affordability.', 'No credit offer: none of the partner quotes fit what you can comfortably repay.')
-      : d.stop('net_benefit', 'not_eligible', 'No partner quotes available.', 'No suggestion right now: our lending partners couldn’t quote.');
+      ? noCredit('No partner quote fits affordability.', 'This would stretch your monthly budget, so we’re not suggesting a loan.')
+      : d.stop('net_benefit', 'not_eligible', 'No partner quotes available.', 'Our lending partners couldn’t give a price just now. Please try again a little later.');
   }
 
   // 7. Net benefit, in rupees, from the savings method
@@ -206,7 +206,7 @@ export function evaluateBigSpend(s: MemberSnapshot, trigger: CardPurchaseTrigger
   const best = options.find((o) => o.recommended)!;
   const net = card.totalCostPaise - best.totalCostPaise;
   if (net <= 0) {
-    return d.stop('net_benefit', 'no_net_benefit', 'No option is cheaper than keeping it on the card.', 'No suggestion: none of the EMI or loan options would cost less than keeping it on your card.');
+    return d.stop('net_benefit', 'no_net_benefit', 'No option is cheaper than keeping it on the card.', 'None of the EMI or loan options would cost less than your card here, so there’s nothing to save.');
   }
   d.pass('net_benefit', `Saves ${formatInr(net)} vs paying it off on the card over ${months} months.`);
 

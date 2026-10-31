@@ -1,4 +1,4 @@
-import { tierForStreak } from '@cred/engine';
+import { coinsForBillPayment, tierForStreak } from '@cred/engine';
 import { SIM_START_DATE } from '@cred/types';
 import type { CredDb } from '../cred';
 import { BANK, FUND_HOUSE } from './catalog';
@@ -84,6 +84,38 @@ export async function seedCred(db: CredDb, worlds: PersonaWorld[]): Promise<void
     }
 
     await db.ladderProgress.create({ data: { memberId, tier: tierForStreak(w.onTimeStreak).tier, onTimeStreak: w.onTimeStreak } });
+
+    // Rewards: coins from the last few on-time bill payments, plus an opening balance up to the persona's total
+    const earned = known
+      .filter((s) => s.payment?.onTime)
+      .slice(-5)
+      .map((s) => ({ s, coins: coinsForBillPayment(s.payment!.amountPaise, true) }))
+      .filter((x) => x.coins > 0);
+    const earnedTotal = earned.reduce((a, x) => a + x.coins, 0);
+    await db.rewardEntry.create({
+      data: { memberId, kind: 'opening', coins: Math.max(0, f.cred.rewardsCoins - earnedTotal), description: 'Coins from earlier bill payments', at: at(f.cred.memberSince) },
+    });
+    for (const { s, coins } of earned) {
+      await db.rewardEntry.create({
+        data: { memberId, kind: 'earned', coins, description: 'Bill paid on time', sourceRef: s.payment!.id, at: s.payment!.paidAt },
+      });
+    }
+
+    await db.upiTransaction.createMany({
+      data: w.upiPayments.map((u) => ({
+        id: u.id,
+        memberId,
+        upiTxnRef: `utx_${u.id}`,
+        payerVpa: p.vpa,
+        payeeVpa: u.payeeVpa,
+        payeeName: u.payeeName,
+        amountPaise: u.amountPaise,
+        note: u.note,
+        status: 'success',
+        rrn: u.rrn,
+        createdAt: u.at,
+      })),
+    });
 
     if (f.cred.portfolioLinked) {
       const consentId = `aac_${f.key}_portfolio`;

@@ -43,6 +43,8 @@ async function dispatch(ctx: Ctx, event: WebhookEvent): Promise<string | null> {
       return onLoanDecided(ctx, event);
     case 'lender.loan.disbursed':
       return onLoanDisbursed(ctx, event);
+    case 'upi.transaction.completed':
+      return onUpiCompleted(ctx, event);
     case 'sim.clock.advanced':
       await ctx.db.simState.upsert({ where: { id: 1 }, update: { currentDate: event.data.to }, create: { id: 1, currentDate: event.data.to } });
       return null;
@@ -110,4 +112,19 @@ async function onLoanDisbursed(ctx: Ctx, event: WebhookEventOf<'lender.loan.disb
   ctx.hub.member(loan.memberId, { type: 'loan.updated', data: { loan: toLoan(full) } });
   await ctx.audit({ memberId: loan.memberId, actor: 'partner', action: 'loan.disbursed', target: loan.id, details: { lender: loan.lenderName, principalPaise: d.principalPaise } });
   return loan.memberId;
+}
+
+/** UPI made from the CRED app: the switch reports the outcome; CRED sees it directly. */
+async function onUpiCompleted(ctx: Ctx, event: WebhookEventOf<'upi.transaction.completed'>): Promise<string | null> {
+  const row = await ctx.db.upiTransaction.findUnique({ where: { id: event.data.clientRef } });
+  if (!row) return null;
+  if (row.status === 'awaiting_pin') {
+    const updated = await ctx.db.upiTransaction.update({
+      where: { id: row.id },
+      data: { status: event.data.status, rrn: event.data.rrn, failureReason: event.data.failureReason },
+    });
+    ctx.hub.member(row.memberId, { type: 'upi.updated', data: { paymentId: row.id, status: updated.status } });
+    await ctx.audit({ memberId: row.memberId, actor: 'partner', action: `upi.${event.data.status}`, target: row.id, details: { amountPaise: row.amountPaise, rrn: event.data.rrn } });
+  }
+  return row.memberId;
 }

@@ -1,4 +1,4 @@
-import type { AuditLog, CardTransaction as TxnRow, EngineDecision as DecisionRow, HelpPlan as HelpRow, Loan as LoanRow, EmiInstallment as InstRow, Offer as OfferRow, Permission as PermRow, Card as CardRow, Statement as StatementRow, BillPayment as PayRow } from '@cred/db/cred';
+import type { AuditLog, CardTransaction as TxnRow, EngineDecision as DecisionRow, HelpPlan as HelpRow, Loan as LoanRow, EmiInstallment as InstRow, Offer as OfferRow, Permission as PermRow, Card as CardRow, Statement as StatementRow, BillPayment as PayRow, UpiTransaction as UpiRow, RewardEntry as RewardRow } from '@cred/db/cred';
 import {
   AuditEntry,
   Card,
@@ -10,6 +10,8 @@ import {
   Permission,
   Statement,
   BillPayment,
+  UpiPayment,
+  RewardEntry,
 } from '@cred/types';
 
 const iso = (d: Date) => d.toISOString();
@@ -18,8 +20,21 @@ const json = <T>(s: string | null): T => (s ? JSON.parse(s) : null) as T;
 export const toAudit = (r: AuditLog): AuditEntry =>
   AuditEntry.parse({ id: r.id, memberId: r.memberId, actor: r.actor, action: r.action, target: r.target, details: json(r.detailsJson) ?? {}, at: iso(r.at) });
 
-export const toCard = (c: CardRow): Card =>
+/** Card with its latest statement (what's due) and utilisation. */
+export const toCard = (c: CardRow, latest?: StatementRow | null): Card =>
   Card.parse({
+    utilisationBps: c.limitPaise > 0 ? Math.round((c.outstandingPaise * 10_000) / c.limitPaise) : 0,
+    nextDue: latest
+      ? {
+          statementId: latest.id,
+          totalDuePaise: latest.totalDuePaise,
+          minDuePaise: latest.minDuePaise,
+          paidPaise: latest.paidPaise,
+          remainingPaise: Math.max(0, latest.totalDuePaise - latest.paidPaise),
+          dueDate: latest.dueDate,
+          status: latest.status,
+        }
+      : null,
     id: c.id,
     issuerName: c.issuerName,
     network: c.network,
@@ -38,7 +53,24 @@ export const toStatement = (s: StatementRow): Statement =>
   Statement.parse({ id: s.id, cardId: s.cardId, periodStart: s.periodStart, periodEnd: s.periodEnd, totalDuePaise: s.totalDuePaise, minDuePaise: s.minDuePaise, paidPaise: s.paidPaise, dueDate: s.dueDate, status: s.status });
 
 export const toPayment = (p: PayRow): BillPayment =>
-  BillPayment.parse({ id: p.id, statementId: p.statementId, kind: p.kind, amountPaise: p.amountPaise, paidAt: iso(p.paidAt), onTime: p.onTime });
+  BillPayment.parse({ id: p.id, statementId: p.statementId, kind: p.kind, source: p.source, amountPaise: p.amountPaise, paidAt: iso(p.paidAt), onTime: p.onTime });
+
+export const toUpi = (u: UpiRow): UpiPayment =>
+  UpiPayment.parse({
+    id: u.id,
+    payerVpa: u.payerVpa,
+    payeeVpa: u.payeeVpa,
+    payeeName: u.payeeName,
+    amountPaise: u.amountPaise,
+    note: u.note,
+    status: u.status,
+    rrn: u.rrn,
+    failureReason: u.failureReason,
+    createdAt: iso(u.createdAt),
+  });
+
+export const toReward = (r: RewardRow): RewardEntry =>
+  RewardEntry.parse({ id: r.id, kind: r.kind, coins: r.coins, description: r.description, at: iso(r.at) });
 
 export const toPermission = (p: PermRow): Permission =>
   Permission.parse({ scope: p.scope, status: p.status, grantedAt: p.grantedAt && iso(p.grantedAt), withdrawnAt: p.withdrawnAt && iso(p.withdrawnAt), context: p.context });

@@ -1,31 +1,34 @@
 'use client';
 
 import { credApi, type MemberDecision } from '@cred/types';
-import { Surface } from '@cred/ui';
-import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import { Badge, Card, EmptyState, ErrorState, LoadingScreen } from '@cred/ui';
+import { dateTime } from '@/lib/format';
+import { useApi } from '@/lib/live';
 
-const LABEL: Record<MemberDecision['outcome'], string> = { offer: 'Suggested', blocked: 'No suggestion', help: 'Help, not credit' };
+const LABEL: Record<MemberDecision['outcome'], { text: string; tone: 'accent' | 'neutral' | 'warning' }> = {
+  offer: { text: 'Suggested', tone: 'accent' },
+  blocked: { text: 'Nothing suggested', tone: 'neutral' },
+  help: { text: 'Support offered', tone: 'warning' },
+};
 
 /** Transparency: every decision CRED made about you, offer or not, and why. */
-export function Decisions({ refreshKey }: { refreshKey: number }) {
-  const [items, setItems] = useState<MemberDecision[]>([]);
-  useEffect(() => {
-    api(credApi.products.decisions, { query: { limit: 5 } }).then((r) => setItems(r.decisions), () => undefined);
-  }, [refreshKey]);
-  if (!items.length) return null;
+export function Decisions({ limit = 50 }: { limit?: number }) {
+  const q = useApi(credApi.products.decisions, { query: { limit } });
+  if (q.error && !q.data) return <ErrorState message={q.error} onRetry={q.reload} />;
+  if (!q.data) return <LoadingScreen label="Loading decisions" />;
+  if (!q.data.decisions.length) return <EmptyState icon="list" title="Nothing yet" body="When CRED considers a suggestion for you, you’ll see it here, whether or not we showed one." />;
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Why we did or didn’t suggest something</h2>
-      {items.map((d) => (
-        <Surface key={d.id} className="flex flex-col gap-1 p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted">
-            {LABEL[d.outcome]}
-            {d.origin === 'member_initiated' ? ' · you asked' : ''} · {new Date(d.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-          </p>
-          <p className="text-sm">{d.explanation}</p>
-        </Surface>
+    <div className="flex flex-col gap-3">
+      {q.data.decisions.map((d) => (
+        <Card key={d.id} className="flex flex-col gap-2 p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={LABEL[d.outcome].tone}>{LABEL[d.outcome].text}</Badge>
+            {d.origin === 'member_initiated' ? <Badge>You asked</Badge> : null}
+            <span className="text-caption text-muted">{dateTime(d.createdAt)}</span>
+          </div>
+          <p className="text-callout">{d.explanation}</p>
+        </Card>
       ))}
-    </section>
+    </div>
   );
 }

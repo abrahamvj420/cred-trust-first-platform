@@ -3,7 +3,33 @@ import type { BrandTheme } from './types';
 
 export type { BrandTheme } from './types';
 
-const radius = (sm: number, md: number, lg: number) => ({ sm: `${sm}px`, md: `${md}px`, lg: `${lg}px` });
+const radius = (sm: number, md: number, lg: number, xl = lg + 8) => ({ sm: `${sm}px`, md: `${md}px`, lg: `${lg}px`, xl: `${xl}px` });
+
+/** Shared scale; brands override where their personality differs. */
+const base = {
+  type: {
+    display: ['34px', '40px', '-0.02em', 700],
+    title: ['24px', '30px', '-0.015em', 650],
+    headline: ['17px', '24px', '-0.005em', 600],
+    body: ['15px', '22px', '0', 400],
+    callout: ['14px', '20px', '0', 400],
+    caption: ['13px', '18px', '0', 400],
+    overline: ['11px', '16px', '0.14em', 600],
+  },
+  space: { gutter: '20px', section: '28px', card: '20px' },
+  motion: { fast: '120ms', base: '200ms', slow: '320ms', standard: 'cubic-bezier(0.2, 0, 0, 1)', emphasized: 'cubic-bezier(0.3, 0, 0, 1)' },
+} satisfies Pick<BrandTheme, 'type' | 'space' | 'motion'>;
+
+const lightElevation = {
+  e1: '0 1px 2px rgba(16, 24, 40, 0.06)',
+  e2: '0 4px 16px -4px rgba(16, 24, 40, 0.12)',
+  e3: '0 -8px 32px rgba(16, 24, 40, 0.18)',
+};
+const darkElevation = {
+  e1: 'inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 1px 2px rgba(0, 0, 0, 0.5)',
+  e2: 'inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 12px 32px -12px rgba(0, 0, 0, 0.7)',
+  e3: 'inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 -16px 48px rgba(0, 0, 0, 0.6)',
+};
 
 /** CRED member app: premium, dark, minimal. No CRED logos or trademarks. */
 export const credTheme: BrandTheme = {
@@ -24,7 +50,11 @@ export const credTheme: BrandTheme = {
     negative: '#FF7A70',
     warning: '#F2C46D',
   },
-  radius: radius(10, 16, 24),
+  radius: radius(12, 18, 24, 32),
+  ...base,
+  type: { ...base.type, display: ['40px', '44px', '-0.03em', 700], title: ['26px', '32px', '-0.02em', 650] },
+  space: { gutter: '20px', section: '32px', card: '20px' },
+  elevation: darkElevation,
 };
 
 /** CRED internal console: calm, dense, readable. */
@@ -47,6 +77,8 @@ export const adminTheme: BrandTheme = {
     warning: '#FBBF24',
   },
   radius: radius(6, 8, 12),
+  ...base,
+  elevation: darkElevation,
 };
 
 /** ShopKart: a bright, real-looking online store. */
@@ -64,11 +96,13 @@ export const shopkartTheme: BrandTheme = {
     muted: '#5F6B7D',
     accent: '#C2410C',
     accentText: '#FFFFFF',
-    positive: '#16A34A',
-    negative: '#DC2626',
-    warning: '#D97706',
+    positive: '#15803D',
+    negative: '#B91C1C',
+    warning: '#B45309',
   },
   radius: radius(6, 10, 16),
+  ...base,
+  elevation: lightElevation,
 };
 
 /** Mock Bank: conservative navy retail bank. */
@@ -91,6 +125,8 @@ export const mockbankTheme: BrandTheme = {
     warning: '#B45309',
   },
   radius: radius(4, 6, 10),
+  ...base,
+  elevation: lightElevation,
 };
 
 /** UPI switch PIN page: plain, trustworthy, green. */
@@ -110,9 +146,11 @@ export const upiTheme: BrandTheme = {
     accentText: '#FFFFFF',
     positive: '#1F7A3A',
     negative: '#C62828',
-    warning: '#B26A00',
+    warning: '#8F5600',
   },
   radius: radius(6, 10, 14),
+  ...base,
+  elevation: lightElevation,
 };
 
 /** Account Aggregator consent manager: regulated, teal, explicit. */
@@ -135,6 +173,8 @@ export const aaTheme: BrandTheme = {
     warning: '#B54708',
   },
   radius: radius(4, 8, 12),
+  ...base,
+  elevation: lightElevation,
 };
 
 /** Sahaj Health Insurance: warm, caring purple. */
@@ -157,6 +197,8 @@ export const insurerTheme: BrandTheme = {
     warning: '#B45309',
   },
   radius: radius(8, 12, 18),
+  ...base,
+  elevation: lightElevation,
 };
 
 /** Meridian Mutual Fund: considered, ochre. */
@@ -179,6 +221,8 @@ export const fundhouseTheme: BrandTheme = {
     warning: '#A15C07',
   },
   radius: radius(4, 8, 14),
+  ...base,
+  elevation: lightElevation,
 };
 
 export const themes = {
@@ -214,5 +258,25 @@ export function themeVars(t: BrandTheme): CSSProperties {
     '--brand-radius-sm': t.radius.sm,
     '--brand-radius-md': t.radius.md,
     '--brand-radius-lg': t.radius.lg,
+    '--brand-radius-xl': t.radius.xl,
+    ...Object.fromEntries(
+      Object.entries(t.type).flatMap(([k, [size, lh, ls, w]]) => [
+        [`--type-${k}-size`, size],
+        [`--type-${k}-lh`, lh],
+        [`--type-${k}-ls`, ls],
+        [`--type-${k}-weight`, String(w)],
+      ]),
+    ),
+    '--space-gutter': t.space.gutter,
+    '--space-section': t.space.section,
+    '--space-card': t.space.card,
+    '--elev-1': t.elevation.e1,
+    '--elev-2': t.elevation.e2,
+    '--elev-3': t.elevation.e3,
+    '--motion-fast': t.motion.fast,
+    '--motion-base': t.motion.base,
+    '--motion-slow': t.motion.slow,
+    '--ease-standard': t.motion.standard,
+    '--ease-emphasized': t.motion.emphasized,
   } as CSSProperties;
 }

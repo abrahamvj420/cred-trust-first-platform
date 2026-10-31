@@ -154,7 +154,7 @@ describe('M3 rules end to end', () => {
       return d.length ? d : null;
     }, 'Aarav decision');
     expect(decision).toMatchObject({ outcome: 'blocked', reasons: ['can_pay_in_full'], offerId: null });
-    expect(decision!.explanation).toMatch(/you’ll likely pay it in full/);
+    expect(decision!.explanation).toMatch(/^Looks like you’ll clear this by the due date, so there’s nothing to save/);
     expect((await cred(credApi.products.offers, { token })).active).toBeNull();
     const perms = (await cred(credApi.admin.permissionLog, { query: { memberId: memberId('aarav') } })).entries.map((e) => e.action);
     expect(perms).not.toContain('permission.prompted'); // nothing to ask about
@@ -190,7 +190,7 @@ describe('M3 rules end to end', () => {
       return d.length >= 2 ? d : null;
     }, 'second Sneha decision');
     expect(decisions[0]).toMatchObject({ outcome: 'blocked', reasons: ['no_permission'] });
-    expect(decisions[0]!.explanation).toMatch(/turned Smart Savings off/);
+    expect(decisions[0]!.explanation).toMatch(/^Smart Savings is off/);
   });
 
   it('"Not now" to Smart Savings is not asked again (90-day rule)', async () => {

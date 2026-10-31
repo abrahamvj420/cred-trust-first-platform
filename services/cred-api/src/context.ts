@@ -12,6 +12,8 @@ export interface Ctx {
   partner<E extends Endpoint>(endpoint: E, input?: CallInput<E>): Promise<EndpointResponse<E>>;
   audit(entry: { memberId: string | null; actor: AuditEntry['actor']; action: string; target?: string | null; details?: Record<string, unknown> }): Promise<void>;
   simDate(): Promise<string>;
+  /** "Now" in the simulated world: sim date at the current IST time of day. */
+  simNow(): Promise<Date>;
 }
 
 export function createCtx(db: CredDb, hub: Hub, log: Logger): Ctx {
@@ -27,6 +29,11 @@ export function createCtx(db: CredDb, hub: Hub, log: Logger): Ctx {
     },
     async simDate() {
       return (await db.simState.findUnique({ where: { id: 1 } }))?.currentDate ?? new Date().toISOString().slice(0, 10);
+    },
+    async simNow() {
+      const date = await this.simDate();
+      const ist = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(11, 19);
+      return new Date(`${date}T${ist}+05:30`);
     },
   };
 }

@@ -29,23 +29,25 @@ export function memberHandlers(ctx: Ctx, h: H) {
   h.on<typeof credApi.member.home, Auth>(credApi.member.home, async ({ auth }) => {
     const m = await db.member.findUniqueOrThrow({
       where: { id: auth.memberId },
-      include: { cards: { include: { statements: { orderBy: { periodEnd: 'desc' }, take: 1 } } }, permissions: true, offers: { where: { status: { in: ACTIVE_OFFER_STATUSES } }, orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: {
+        cards: { include: { statements: { orderBy: { periodEnd: 'desc' }, take: 1 } } },
+        permissions: true,
+        offers: { where: { status: { in: ACTIVE_OFFER_STATUSES } }, orderBy: { createdAt: 'desc' }, take: 1 },
+        rewards: { select: { coins: true } },
+      },
     });
     const card = m.cards[0];
     const bill = card?.statements[0];
     return {
-      member: { id: m.id, personaKey: m.personaKey as 'aarav', name: m.name, phoneMasked: `XXXXXX${m.phone.slice(-4)}`, city: m.city, memberSince: m.memberSince },
-      cards: m.cards.map(toCard),
+      member: { id: m.id, personaKey: m.personaKey as 'aarav', name: m.name, phoneMasked: `XXXXXX${m.phone.slice(-4)}`, city: m.city, memberSince: m.memberSince, vpa: m.vpa },
+      cards: m.cards.map((c) => toCard(c, c.statements[0])),
       activeOffer: m.offers[0] ? toOffer(m.offers[0]) : null,
       nextBill: bill && card ? { cardId: card.id, statementId: bill.id, totalDuePaise: Math.max(0, bill.totalDuePaise - bill.paidPaise), dueDate: bill.dueDate } : null,
       smartSavingsGranted: m.permissions.some((p) => p.scope === 'smart_savings' && p.status === 'granted'),
-      rewardsCoins: 0,
+      rewardsCoins: Math.max(0, m.rewards.reduce((a, r) => a + r.coins, 0)),
+      simDate: await ctx.simDate(),
     };
   });
-
-  h.on<typeof credApi.member.cards, Auth>(credApi.member.cards, async ({ auth }) => ({
-    cards: (await db.card.findMany({ where: { memberId: auth.memberId } })).map(toCard),
-  }));
 
   h.on<typeof credApi.member.statements, Auth>(credApi.member.statements, async ({ auth, params }) => {
     const card = await db.card.findUnique({ where: { id: params.cardId } });

@@ -11,7 +11,7 @@ import {
   type StressSignal,
   type TriggerOrigin,
 } from '@cred/types';
-import { describeStress, stressSignals, utilisationBps } from './checks/stress';
+import { stressSignals, utilisationBps } from './checks/stress';
 import type { RuleValues } from './rules';
 import type { MemberSnapshot } from './snapshot';
 
@@ -140,7 +140,7 @@ export function permissionCheck(d: Decision, s: MemberSnapshot, rules: RuleValue
     return null;
   }
   if (s.smartSavings === 'withdrawn') {
-    return d.stop('permission', 'no_permission', 'Smart Savings was withdrawn.', 'No suggestion: you turned Smart Savings off, so CRED doesn’t look for savings for you. You can turn it back on in Permissions.');
+    return d.stop('permission', 'no_permission', 'Smart Savings was withdrawn.', 'Smart Savings is off, so we’re not looking for savings for you. You can turn it on any time in Permissions.');
   }
   if (s.smartSavingsLastAskedOn && daysBetween(s.smartSavingsLastAskedOn, s.today) < rules.permissionReaskDays) {
     const until = addDays(s.smartSavingsLastAskedOn, rules.permissionReaskDays);
@@ -148,7 +148,7 @@ export function permissionCheck(d: Decision, s: MemberSnapshot, rules: RuleValue
       'permission',
       'no_permission',
       `Asked on ${s.smartSavingsLastAskedOn}, not turned on; re-ask after ${until}.`,
-      `No suggestion: you said not now to Smart Savings on ${prettyDate(s.smartSavingsLastAskedOn)}, so we won’t ask again before ${prettyDate(until)}.`,
+      `You said not now to Smart Savings on ${prettyDate(s.smartSavingsLastAskedOn)}. We won’t ask again before ${prettyDate(until)}.`,
     );
   }
   d.pending('permission', 'awaiting_permission', 'Smart Savings not on; will ask once, with this offer’s value.');
@@ -162,10 +162,9 @@ export function repaymentHelp(s: MemberSnapshot, rules: RuleValues): HelpDraft {
     kind: 'repayment_plan',
     title: `You’re carrying ${formatInr(s.card.outstandingPaise)} on your card`,
     body:
-      `At 3.5% a month plus GST that costs about ${formatInr(monthlyInterest)} a month. ` +
-      `We won’t offer you new credit right now. ` +
-      (bill ? `Paying the full bill of ${formatInr(bill.totalDuePaise)} by ${prettyDate(bill.dueDate)} stops the interest; ` : '') +
-      `if that’s hard this month, set up a repayment plan or talk to us.`,
+      `At 3.5% a month plus GST, that’s about ${formatInr(monthlyInterest)} a month in interest. ` +
+      (bill ? `Paying the full bill of ${formatInr(bill.totalDuePaise)} by ${prettyDate(bill.dueDate)} stops it. ` : '') +
+      `If that’s hard this month, a repayment plan can spread it out, and we’re here to talk it through.`,
     monthlyInterestPaise: monthlyInterest,
   };
 }
@@ -181,7 +180,7 @@ export function stressCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): 
   return d.help(
     signals,
     `Stress: ${signals.join(', ')} (utilisation ${util}%). Repayment help instead of credit.`,
-    `No credit offer: your recent card activity shows ${describeStress(signals)} (${util}% of your limit used). More credit wouldn’t help, so here are ways to bring the balance down instead.`,
+    'We’ll hold off on new credit while you clear your current balance. Here’s a plan that could help.',
     s.helpThisMonth === 0 ? repaymentHelp(s, rules) : null,
   );
 }
@@ -189,7 +188,7 @@ export function stressCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): 
 /** One active offer at a time (every feature, every origin); proactive offers also have a monthly cap and a quiet period after "No thanks". */
 export function capCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): EngineResult | null {
   if (s.offers.activeOfferId) {
-    return d.stop('offer_cap', 'active_offer_exists', 'Another offer is already active; one at a time.', 'No new suggestion: you already have one open, and we show at most one at a time. Accept or dismiss it first.');
+    return d.stop('offer_cap', 'active_offer_exists', 'Another offer is already active; one at a time.', 'You already have a suggestion open. We show one at a time, so take a look at that one first.');
   }
   if (d.origin === 'proactive') {
     if (s.offers.proactiveThisMonth >= rules.monthlyProactiveOfferCap) {
@@ -197,7 +196,7 @@ export function capCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): Eng
         'offer_cap',
         'monthly_cap_reached',
         `Monthly cap of ${rules.monthlyProactiveOfferCap} proactive offers reached.`,
-        `No new suggestion: you’ve already had ${rules.monthlyProactiveOfferCap} this month, which is our limit.`,
+        `You’ve had ${rules.monthlyProactiveOfferCap} suggestions this month, so we’ll give it a rest until next month.`,
       );
     }
     const recent = s.offers.declines.find((x) => x.feature === d.feature && daysBetween(x.decidedOn, s.today) < rules.declineCooldownDays);
@@ -207,7 +206,7 @@ export function capCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): Eng
         'offer_cap',
         'recently_declined',
         `Declined on ${recent.decidedOn}; quiet until ${until}.`,
-        `No suggestion: you said no thanks to a similar one on ${prettyDate(recent.decidedOn)}, so we’re staying quiet until ${prettyDate(until)}.`,
+        `You said no thanks on ${prettyDate(recent.decidedOn)}, so we’ll stay quiet about this until ${prettyDate(until)}.`,
       );
     }
   }

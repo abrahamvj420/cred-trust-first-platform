@@ -15,7 +15,8 @@
     "seed": "pnpm --filter @cred/db seed",
     "db:generate": "pnpm --filter @cred/db generate",
     "check:boundaries": "tsx scripts/check-boundaries.ts",
-    "postinstall": "pnpm --filter @cred/db generate || true"
+    "postinstall": "pnpm --filter @cred/db generate || true",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
@@ -25,6 +26,8 @@
     "vitest": "^4.1.12",
     "@cred/types": "workspace:*",
     "zod": "^4.6.7",
-    "@cred/engine": "workspace:*"
+    "@cred/engine": "workspace:*",
+    "puppeteer-core": "^25.16.0",
+    "axe-core": "^4.14.0"
   }
 }

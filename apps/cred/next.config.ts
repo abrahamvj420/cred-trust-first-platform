@@ -7,6 +7,8 @@ const rootEnv = path.resolve(import.meta.dirname, '../../.env');
 if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 const config: NextConfig = {
+  // Keeps screenshots and demos clean; errors still show in the overlay.
+  devIndicators: false,
   transpilePackages: ['@cred/types', '@cred/ui'],
   env: {
     NEXT_PUBLIC_CRED_API_URL: process.env.CRED_API_URL ?? 'http://localhost:4000',

@@ -83,6 +83,7 @@ export const UpiTransactionCompleted = base(
     clientRef: Id,
     status: UpiStatus,
     rrn: z.string().nullable(),
+    failureReason: z.string().nullable(),
     amountPaise: PositivePaise,
     completedAt: IsoDateTime,
   }),

@@ -84,9 +84,18 @@ export const bankEndpoints = {
       cardRef: Id,
       statementRef: Id,
       amountPaise: PositivePaise,
+      /** Member's own bank account pays: by UPI or net banking. */
+      source: z.enum(['upi', 'netbanking']),
       clientRef: Id,
     }),
-    response: z.object({ paymentRef: Id, status: z.literal('received'), onTime: z.boolean(), outstandingPaise: NonNegativePaise }),
+    response: z.object({
+      paymentRef: Id,
+      status: z.literal('received'),
+      onTime: z.boolean(),
+      receivedAt: IsoDateTime,
+      statementPaidPaise: NonNegativePaise,
+      outstandingPaise: NonNegativePaise,
+    }),
   }),
 } as const;
 
@@ -164,6 +173,8 @@ export const UpiPinChallenge = z.object({
   amountPaise: PositivePaise,
   note: z.string().nullable(),
   status: UpiStatus,
+  attemptsLeft: z.number().int().nonnegative(),
+  returnUrl: z.url(),
   initiatedVia: z.string(),
   /** Demo only: shown on the PIN page. */
   demoPin: z.string(),
@@ -208,7 +219,13 @@ export const upiEndpoints = {
     summary: 'Enter UPI PIN',
     params: z.object({ upiTxnRef: Id }),
     body: z.object({ pin: z.string().regex(/^\d{4,6}$/) }),
-    response: z.object({ status: UpiStatus, rrn: z.string().nullable(), returnUrl: z.url() }),
+    response: z.object({
+      status: UpiStatus,
+      rrn: z.string().nullable(),
+      failureReason: z.string().nullable(),
+      attemptsLeft: z.number().int().nonnegative(),
+      returnUrl: z.url(),
+    }),
   }),
 } as const;
 

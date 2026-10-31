@@ -6,7 +6,7 @@
 export type RuleUnit = 'bps' | 'paise' | 'days' | 'count' | 'months' | 'multiple_bps';
 
 export interface RuleDefinition {
-  group: 'Rates' | 'Big-Spend signal' | 'Likely to carry' | 'Stress' | 'Affordability' | 'Offer control' | 'Permissions' | 'Key facts';
+  group: 'Rates' | 'Big-Spend signal' | 'Likely to carry' | 'Stress' | 'Affordability' | 'Offer control' | 'Permissions' | 'Key facts' | 'Rewards';
   label: string;
   unit: RuleUnit;
   value: number;
@@ -48,6 +48,9 @@ export const RULE_DEFINITIONS = {
 
   // Key facts
   coolingOffDays: { group: 'Key facts', label: 'Cooling-off period', unit: 'days', value: 3, description: 'Days a member can exit a loan by repaying principal, with no penalty.' },
+
+  // Rewards
+  rewardCoinsPer100Rupees: { group: 'Rewards', label: 'Coins per ₹100 paid on time', unit: 'count', value: 10, description: 'Coins earned for every ₹100 of card bill paid by the due date, in full or in part.' },
 } as const satisfies Record<string, RuleDefinition>;
 
 export type RuleKey = keyof typeof RULE_DEFINITIONS;
@@ -73,4 +76,9 @@ export function formatRuleValue(unit: RuleUnit, value: number): string {
     case 'count':
       return String(value);
   }
+}
+
+/** Coins for a bill payment: only on-time payments earn. */
+export function coinsForBillPayment(amountPaise: number, onTime: boolean, rules: RuleValues = DEFAULT_RULES): number {
+  return onTime ? Math.floor(amountPaise / 100 / 100) * rules.rewardCoinsPer100Rupees : 0;
 }

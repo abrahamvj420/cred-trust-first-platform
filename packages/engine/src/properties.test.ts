@@ -5,6 +5,7 @@ import { stressSignals } from './checks/stress';
 import { LADDER_TIERS } from './constants';
 import { evaluateBigSpend } from './features/big-spend';
 import { emiCost } from './finance';
+import { BANNED_MEMBER_WORDS, memberFacingStrings } from './member-copy';
 import { DEFAULT_RULES } from './rules';
 import type { MemberSnapshot, QuoteInput } from './snapshot';
 
@@ -150,11 +151,12 @@ describe('engine properties (fast-check)', () => {
     );
   });
 
-  it('every decision is explained, and a block names exactly the check that stopped it', () => {
+  it('every decision is explained in member-safe words, and a block names exactly the check that stopped it', () => {
     fc.assert(
       fc.property(scenario, (x) => {
         const d = run(x);
         expect(d.explanation.length).toBeGreaterThan(20);
+        for (const text of memberFacingStrings(d)) expect(text).not.toMatch(BANNED_MEMBER_WORDS);
         if (d.outcome === 'blocked') {
           const last = d.checks.at(-1)!;
           expect(last.passed).toBe(false);

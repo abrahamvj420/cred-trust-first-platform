@@ -213,6 +213,8 @@ model UpiTxn {
   /// awaiting_pin | success | failed
   status       String   @default("awaiting_pin")
   rrn          String?
+  failureReason String?
+  attemptsLeft Int      @default(3)
   /// cred | shopkart_gateway
   initiatedVia String
   clientRef    String

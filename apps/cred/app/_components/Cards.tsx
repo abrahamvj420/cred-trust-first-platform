@@ -1,44 +1,62 @@
 'use client';
 
 import { credApi, type HelpPlan, type Offer } from '@cred/types';
-import { Button, Surface } from '@cred/ui';
+import { Button, ButtonLink, Card, Icon, Money, Notice } from '@cred/ui';
 import { useState } from 'react';
 import { api, errorText } from '@/lib/api';
 
+/** "Why am I seeing this?" — every offer carries its plain-English reason. */
+export function Why({ text, label = 'Why am I seeing this?' }: { text: string; label?: string }) {
+  return (
+    <details className="group text-callout">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 text-muted transition-calm hover:text-text">
+        <Icon name="info" size={18} />
+        {label}
+        <Icon name="chevron" size={16} className="transition-calm group-open:rotate-90" />
+      </summary>
+      <p className="animate-fade pb-1 text-muted">{text}</p>
+    </details>
+  );
+}
+
 /** Asked once, at the first moment of value. Two choices of equal weight; nothing pre-ticked. */
 export function SmartSavingsCard({ offer, onDone }: { offer: Offer; onDone: () => void }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'on' | 'off' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // The permission is asked with the same conditional wording as the offer.
-  const context = offer.headline;
 
   async function act(grant: boolean) {
-    setBusy(true);
+    setBusy(grant ? 'on' : 'off');
     try {
-      if (grant) await api(credApi.member.grantPermission, { body: { scope: 'smart_savings', context, explicit: true } });
+      if (grant) await api(credApi.member.grantPermission, { body: { scope: 'smart_savings', context: offer.headline, explicit: true } });
       else await api(credApi.products.declineOffer, { params: { offerId: offer.id }, body: { reason: 'Not now (Smart Savings)' } });
       onDone();
     } catch (e) {
       setError(errorText(e));
-      setBusy(false);
+      setBusy(null);
     }
   }
 
   return (
-    <Surface className="flex flex-col gap-3 border-accent">
-      <p className="text-xs font-semibold uppercase tracking-wider text-accent">Smart Savings</p>
-      <h2 className="text-lg font-semibold">{offer.headline}</h2>
-      <p className="text-sm text-muted">
-        Turn on Smart Savings to let CRED look for savings on your card bills and suggest them, only when you gain in rupees and never more than one at a time.
-        You can turn it off in one tap from Permissions.
+    <Card elevation={2} className="flex animate-enter flex-col gap-4 border-accent/40">
+      <p className="flex items-center gap-2 text-overline uppercase text-accent">
+        <Icon name="spark" size={16} /> Smart Savings
+      </p>
+      <h2 className="text-headline">{offer.headline}</h2>
+      <p className="text-callout text-muted">
+        Turn on Smart Savings to let CRED look for savings on your card bills and suggest them, only when you gain in rupees and never more than one at a time. You can turn it
+        off in one tap from Profile.
       </p>
       <Why text={offer.why} />
       <div className="grid grid-cols-2 gap-3">
-        <Button variant="secondary" disabled={busy} onClick={() => act(false)}>Not now</Button>
-        <Button disabled={busy} onClick={() => act(true)}>Turn on and show me</Button>
+        <Button variant="secondary" loading={busy === 'off'} disabled={!!busy} onClick={() => act(false)}>
+          Not now
+        </Button>
+        <Button loading={busy === 'on'} disabled={!!busy} onClick={() => act(true)}>
+          Turn on
+        </Button>
       </div>
-      {error ? <p className="text-sm text-negative">{error}</p> : null}
-    </Surface>
+      {error ? <Notice>{error}</Notice> : null}
+    </Card>
   );
 }
 
@@ -46,42 +64,40 @@ export function OfferCard({ offer, onDone }: { offer: Offer; onDone: () => void 
   const [busy, setBusy] = useState(false);
   async function decline() {
     setBusy(true);
-    await api(credApi.products.declineOffer, { params: { offerId: offer.id }, body: {} });
+    await api(credApi.products.declineOffer, { params: { offerId: offer.id }, body: {} }).catch(() => undefined);
     onDone();
   }
   return (
-    <Surface className="flex flex-col gap-3 border-accent">
-      <p className="text-xs font-semibold uppercase tracking-wider text-accent">If you can’t clear it by the due date</p>
-      <h2 className="font-semibold">{offer.headline}</h2>
-      <p className="text-sm text-muted">{offer.subline}</p>
+    <Card elevation={2} className="flex animate-enter flex-col gap-4 border-accent/40">
+      <p className="flex items-center gap-2 text-overline uppercase text-accent">
+        <Icon name="spark" size={16} /> Smart Savings
+      </p>
+      <div className="flex items-baseline gap-2">
+        <Money paise={offer.netBenefitPaise} size="title" className="text-positive" />
+        <span className="text-callout text-muted">less than card interest</span>
+      </div>
+      <h2 className="text-headline">{offer.headline}</h2>
+      <p className="text-callout text-muted">{offer.subline}</p>
       <Why text={offer.why} />
       <div className="grid grid-cols-2 gap-3">
-        <Button variant="secondary" disabled={busy} onClick={decline}>No thanks</Button>
-        <a href={`/offers/${offer.id}`} className="inline-flex h-12 items-center justify-center rounded-md bg-accent px-5 text-sm font-semibold text-accent-text">
-          Compare options
-        </a>
+        <Button variant="secondary" loading={busy} onClick={decline}>
+          No thanks
+        </Button>
+        <ButtonLink href={`/offers/${offer.id}`}>Compare</ButtonLink>
       </div>
-    </Surface>
+    </Card>
   );
 }
 
 export function HelpCard({ help }: { help: HelpPlan }) {
   return (
-    <Surface className="flex flex-col gap-2 border-warning">
-      <p className="text-xs font-semibold uppercase tracking-wider text-warning">Here to help</p>
-      <h2 className="font-semibold">{help.title}</h2>
-      <p className="text-sm text-muted">{help.body}</p>
-      <p className="text-xs text-muted">Repayment plans and a talk-to-us line arrive in a later milestone.</p>
-    </Surface>
-  );
-}
-
-/** "Why am I seeing this?" — every offer carries its plain-English reason. */
-export function Why({ text, label = 'Why am I seeing this?' }: { text: string; label?: string }) {
-  return (
-    <details className="text-sm">
-      <summary className="cursor-pointer text-muted hover:text-text">{label}</summary>
-      <p className="mt-2 text-muted">{text}</p>
-    </details>
+    <Card elevation={2} className="flex animate-enter flex-col gap-3 border-warning/40">
+      <p className="flex items-center gap-2 text-overline uppercase text-warning">
+        <Icon name="shield" size={16} /> Here to help
+      </p>
+      <h2 className="text-headline">{help.title}</h2>
+      <p className="text-callout text-muted">{help.body}</p>
+      <p className="text-caption text-muted">Repayment plans and a talk-to-us line are coming soon.</p>
+    </Card>
   );
 }

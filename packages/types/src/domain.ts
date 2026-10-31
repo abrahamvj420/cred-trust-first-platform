@@ -39,6 +39,8 @@ export const Member = z.object({
   phoneMasked: z.string(),
   city: z.string(),
   memberSince: IsoDate,
+  /** The member's own UPI ID (pays bills and UPI from their bank account). */
+  vpa: z.string(),
 });
 export type Member = z.infer<typeof Member>;
 
@@ -60,6 +62,20 @@ export const Card = z.object({
   availablePaise: NonNegativePaise,
   billingDay: z.number().int().min(1).max(28),
   dueDay: z.number().int().min(1).max(28),
+  /** Outstanding ÷ limit, in basis points. */
+  utilisationBps: z.number().int().nonnegative(),
+  /** The latest statement and what's still due on it; null before the first statement. */
+  nextDue: z
+    .object({
+      statementId: Id,
+      totalDuePaise: NonNegativePaise,
+      minDuePaise: NonNegativePaise,
+      paidPaise: NonNegativePaise,
+      remainingPaise: NonNegativePaise,
+      dueDate: IsoDate,
+      status: z.enum(['open', 'paid', 'partial', 'unpaid', 'overdue']),
+    })
+    .nullable(),
 });
 export type Card = z.infer<typeof Card>;
 
@@ -86,10 +102,14 @@ export const Statement = z.object({
 });
 export type Statement = z.infer<typeof Statement>;
 
+export const BillPaymentSource = z.enum(['upi', 'netbanking']);
+export type BillPaymentSource = z.infer<typeof BillPaymentSource>;
+
 export const BillPayment = z.object({
   id: Id,
   statementId: Id,
   kind: BillPaymentKind,
+  source: BillPaymentSource.nullable(),
   amountPaise: PositivePaise,
   paidAt: IsoDateTime,
   onTime: z.boolean(),
@@ -105,9 +125,39 @@ export const UpiPayment = z.object({
   note: z.string().nullable(),
   status: UpiStatus,
   rrn: z.string().nullable(),
+  failureReason: z.string().nullable(),
   createdAt: IsoDateTime,
 });
 export type UpiPayment = z.infer<typeof UpiPayment>;
+
+export const UpiContact = z.object({
+  name: z.string(),
+  vpa: z.string(),
+  /** Paid from CRED before. */
+  recent: z.boolean(),
+});
+export type UpiContact = z.infer<typeof UpiContact>;
+
+// ── Rewards ───────────────────────────────────────────────────────────────────
+
+export const RewardEntry = z.object({
+  id: Id,
+  kind: z.enum(['earned', 'redeemed', 'opening']),
+  coins: z.number().int(),
+  description: z.string(),
+  at: IsoDateTime,
+});
+export type RewardEntry = z.infer<typeof RewardEntry>;
+
+export const RewardItem = z.object({
+  id: Id,
+  title: z.string(),
+  brand: z.string(),
+  description: z.string(),
+  costCoins: z.number().int().positive(),
+  valuePaise: PositivePaise,
+});
+export type RewardItem = z.infer<typeof RewardItem>;
 
 // ── Permissions & audit ───────────────────────────────────────────────────────
 

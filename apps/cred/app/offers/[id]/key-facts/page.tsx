@@ -1,10 +1,12 @@
 'use client';
 
-import { credApi, type KeyFactStatement } from '@cred/types';
-import { Button, Surface } from '@cred/ui';
+import { credApi } from '@cred/types';
+import { Button, Card, ErrorState, Field, Icon, LoadingScreen, Notice, Spinner } from '@cred/ui';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
-import { api, errorText, useMemberStream, useToken } from '@/lib/api';
+import { api, errorText } from '@/lib/api';
+import { useApi, useLive } from '@/lib/live';
+import { Screen } from '../../../_shell/Screen';
 
 type Step = 'review' | 'otp' | 'waiting';
 
@@ -12,8 +14,8 @@ function KeyFacts() {
   const { id } = useParams<{ id: string }>();
   const option = useSearchParams().get('option') === 'loan' ? 'loan' : 'emi';
   const router = useRouter();
-  const token = useToken();
-  const [kfs, setKfs] = useState<KeyFactStatement | null>(null);
+  const kfs = useApi(credApi.products.keyFacts, { params: { offerId: id }, query: { option } }, { live: false });
+  const { subscribe } = useLive();
   const [read, setRead] = useState(false); // never pre-ticked
   const [step, setStep] = useState<Step>('review');
   const [otpInfo, setOtpInfo] = useState<{ sentTo: string; demoOtp: string } | null>(null);
@@ -21,18 +23,21 @@ function KeyFacts() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    api(credApi.products.keyFacts, { params: { offerId: id }, query: { option } }).then(setKfs, (e) => setError(errorText(e)));
-  }, [id, option]);
-
   // When the lender's disbursal webhook lands, cred-api pushes loan.updated.
-  const goToLoan = async () => {
-    const loan = (await api(credApi.products.loans)).loans.find((l) => l.offerId === id);
-    if (loan?.status === 'disbursed') router.push(`/loans/${loan.id}`);
-  };
-  useMemberStream(token, (e) => {
-    if (e.type === 'loan.updated' && step === 'waiting') void goToLoan();
-  });
+  useEffect(() => {
+    if (step !== 'waiting') return;
+    const go = async () => {
+      const loan = (await api(credApi.products.loans)).loans.find((l) => l.offerId === id);
+      if (loan?.status === 'disbursed') router.push(`/loans/${loan.id}`);
+    };
+    void go();
+    const off = subscribe((e) => e.type === 'loan.updated' && void go());
+    const t = setInterval(go, 2000);
+    return () => {
+      off();
+      clearInterval(t);
+    };
+  }, [step, id, router, subscribe]);
 
   async function accept() {
     setBusy(true);
@@ -53,64 +58,86 @@ function KeyFacts() {
     try {
       await api(credApi.products.confirmOffer, { params: { offerId: id }, body: { otp } });
       setStep('waiting');
-      setTimeout(goToLoan, 800); // in case the webhook beat us here
     } catch (e) {
       setError(errorText(e));
       setBusy(false);
     }
   }
 
-  if (error && !kfs) return <p className="p-6 text-negative">{error}</p>;
-  if (!kfs) return <p className="p-6 text-muted">Loading key facts…</p>;
+  const k = kfs.data;
+  const footer =
+    step === 'review' && k ? (
+      <div className="grid grid-cols-2 gap-3">
+        <Button variant="secondary" onClick={() => router.push(`/offers/${id}`)}>
+          Not now
+        </Button>
+        <Button disabled={!read} loading={busy} onClick={accept}>
+          Accept
+        </Button>
+      </div>
+    ) : step === 'otp' ? (
+      <Button block disabled={otp.length !== 6} loading={busy} onClick={confirm}>
+        Confirm and sign
+      </Button>
+    ) : null;
 
   return (
-    <main className="mx-auto flex max-w-xl flex-col gap-5 px-4 py-6">
-      <a href={`/offers/${id}`} className="text-sm text-muted">← Back to options</a>
-      <h1 className="text-2xl font-semibold">Key facts</h1>
-      <Surface>
-        <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
-          {kfs.items.map((i) => (
-            <div key={i.label} className="contents">
-              <dt className="text-muted">{i.label}</dt>
-              <dd className="text-right tabular">{i.value}</dd>
-            </div>
-          ))}
-        </dl>
-        <p className="mt-3 text-xs text-muted">Grievances: {kfs.grievanceContact}</p>
-      </Surface>
-
-      {step === 'review' ? (
+    <Screen title="Key facts" back={`/offers/${id}`} footer={footer}>
+      {kfs.error && !k ? (
+        <ErrorState message={kfs.error} onRetry={kfs.reload} />
+      ) : !k ? (
+        <LoadingScreen label="Loading key facts" />
+      ) : (
         <>
-          <label className="flex items-start gap-3 text-sm">
-            <input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} className="mt-1" />
-            I have read the key facts, including the APR, fees and the {kfs.coolingOffDays}-day cooling-off period.
-          </label>
-          <div className="grid grid-cols-2 gap-3">
-            <Button variant="secondary" onClick={() => router.push(`/offers/${id}`)}>Not now</Button>
-            <Button disabled={!read || busy} onClick={accept}>{busy ? 'Sending OTP…' : 'Accept'}</Button>
-          </div>
+          <p className="text-callout text-muted">Read these before you accept. They’re the full cost, including fees and GST.</p>
+          <Card className="p-0">
+            <dl className="divide-y divide-border">
+              {k.items.map((i) => (
+                <div key={i.label} className="flex min-h-12 items-center justify-between gap-4 px-4 py-3 text-callout">
+                  <dt className="text-muted">{i.label}</dt>
+                  <dd className="tabular text-right">{i.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </Card>
+          <p className="text-caption text-muted">Grievances: {k.grievanceContact}</p>
+
+          {step === 'review' ? (
+            <label className="flex min-h-12 cursor-pointer items-start gap-3 rounded-md border border-border bg-surface p-4 text-callout">
+              <input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-current text-accent" />
+              I’ve read the key facts, including the APR, fees and the {k.coolingOffDays}-day cooling-off period.
+            </label>
+          ) : null}
+
+          {step === 'otp' && otpInfo ? (
+            <Card className="flex flex-col gap-3">
+              <Field
+                label={`Enter the 6-digit OTP ${k.lenderOrInsurer} sent to ${otpInfo.sentTo}`}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                inputClassName="text-center text-title tracking-[0.4em]"
+                hint={`Demo: your OTP is ${otpInfo.demoOtp} (any 6 digits work).`}
+                autoFocus
+              />
+            </Card>
+          ) : null}
+
+          {step === 'waiting' ? (
+            <Card className="flex items-center gap-3">
+              <Spinner label="Waiting for the lender" />
+              <p className="text-callout">Signed. {k.lenderOrInsurer} is approving and setting up your EMIs…</p>
+            </Card>
+          ) : null}
+          {error ? <Notice>{error}</Notice> : null}
+          <p className="flex items-center gap-2 text-caption text-muted">
+            <Icon name="shield" size={16} /> Your details go to {k.lenderOrInsurer} only when you accept.
+          </p>
         </>
-      ) : null}
-
-      {step === 'otp' && otpInfo ? (
-        <Surface className="flex flex-col gap-3">
-          <label htmlFor="otp" className="text-sm">{kfs.lenderOrInsurer} sent a 6-digit OTP to {otpInfo.sentTo} to e-sign the agreement</label>
-          <input
-            id="otp"
-            inputMode="numeric"
-            maxLength={6}
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-            className="h-12 rounded-sm border border-border bg-raised px-3 text-lg tracking-[0.4em] tabular"
-          />
-          <p className="text-xs text-muted">Demo: your OTP is {otpInfo.demoOtp} (any 6 digits work).</p>
-          <Button disabled={otp.length !== 6 || busy} onClick={confirm}>{busy ? 'Signing…' : 'Confirm and sign'}</Button>
-        </Surface>
-      ) : null}
-
-      {step === 'waiting' ? <p className="text-sm text-muted">Signed. Waiting for {kfs.lenderOrInsurer} to approve and set up your EMIs…</p> : null}
-      {error ? <p className="text-sm text-negative">{error}</p> : null}
-    </main>
+      )}
+    </Screen>
   );
 }
 

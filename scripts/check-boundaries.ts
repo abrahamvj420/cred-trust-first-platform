@@ -22,7 +22,7 @@ function walk(dir: string, out: string[] = []): string[] {
 interface Rule {
   name: string;
   files: string[];
-  pattern: RegExp;
+  pattern: RegExp | ((line: string) => boolean);
   allow?: (rel: string) => boolean;
 }
 
@@ -68,6 +68,19 @@ const rules: Rule[] = [
     pattern: new RegExp(`\\b(bg|text|border|ring|fill|stroke|from|to|via|outline|divide)-(${PALETTE})(-\\d{2,3})?\\b|\\b(bg|text|border)-\\[(#|rgb|hsl)`),
   },
   {
+    // Member copy is supportive: these stay in admin's reason codes (engine copy is unit-tested too).
+    name: 'Member app text never says "stress", "risk" or "blocked"',
+    files: files('apps/cred').filter(isSource),
+    pattern: (line) => {
+      const banned = /stress|risk|blocked/i;
+      // String literals, matched left to right so neighbouring strings pair up correctly
+      const literals = line.match(/'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/g) ?? [];
+      // JSX text between tags
+      const jsxText = line.match(/>[^<>{}]+</g) ?? [];
+      return [...literals, ...jsxText].some((t) => banned.test(t));
+    },
+  },
+  {
     name: 'Apps use only their brand theme: no ad-hoc fonts',
     files: files('apps'),
     pattern: /font-family\s*:|fontFamily\s*:/,
@@ -83,7 +96,8 @@ for (const rule of rules) {
     readFileSync(file, 'utf8')
       .split('\n')
       .forEach((line, i) => {
-        if (rule.pattern.test(line)) hits.push(`  ${rel}:${i + 1}  ${line.trim()}`);
+        const hit = typeof rule.pattern === 'function' ? rule.pattern(line) : rule.pattern.test(line);
+        if (hit) hits.push(`  ${rel}:${i + 1}  ${line.trim()}`);
       });
   }
   if (hits.length) {

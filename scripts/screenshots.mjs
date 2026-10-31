@@ -1,0 +1,311 @@
+/**
+ * Screen sweep + screenshots (needs `pnpm dev` running and a local Chrome).
+ *
+ *   pnpm screenshots m4
+ *
+ * Resets the demo world, then for every persona opens every member screen at
+ * 390×844 and checks: no page errors, no error state, axe has no serious or
+ * critical issues. Drives the key flows (bill pay, UPI with PIN, rewards,
+ * offer → key facts → EMI) and saves screenshots to docs/screenshots/<milestone>/.
+ * Exits non-zero on any failure.
+ */
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import path from 'node:path';
+import puppeteer from 'puppeteer-core';
+
+const root = path.resolve(import.meta.dirname, '..');
+process.loadEnvFile(path.join(root, '.env'));
+const require = createRequire(import.meta.url);
+const AXE = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
+
+const milestone = process.argv[2] ?? 'm4';
+const OUT = path.join(root, 'docs/screenshots', milestone);
+const CRED = 'http://localhost:3000';
+const CRED_API = 'http://localhost:4000';
+const ECO_API = 'http://localhost:4100';
+const CHROME = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const PERSONAS = ['aarav', 'priya', 'sneha', 'kabir', 'rohan'];
+
+const failures = [];
+const log = (...a) => console.log('•', ...a);
+
+// ── API helpers (setup only; the UI is what's under test) ──────────────────
+async function http(url, { method = 'GET', body, headers = {} } = {}) {
+  const res = await fetch(url, { method, headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`${method} ${url} → ${res.status} ${JSON.stringify(json)}`);
+  return json;
+}
+const login = async (key) => (await http(`${CRED_API}/v1/auth/demo-login`, { method: 'POST', body: { personaKey: key } })).token;
+const asMember = (token) => ({ authorization: `Bearer ${token}` });
+const phoneOf = { aarav: '9000000001', priya: '9000000002', sneha: '9000000003', kabir: '9000000004', rohan: '9000000005' };
+
+async function reset() {
+  await http(`${ECO_API}/sim/v1/reset`, { method: 'POST' });
+  await http(`${CRED_API}/sim/reset`, { method: 'POST' });
+}
+
+async function buy(key, amountPaise, item) {
+  const m = { 'x-merchant-key': process.env.SHOPKART_MERCHANT_KEY };
+  const { cards } = await http(`${ECO_API}/gateway/v1/shoppers/${phoneOf[key]}/saved-cards`, { headers: m });
+  const created = await http(`${ECO_API}/gateway/v1/payments`, {
+    method: 'POST',
+    headers: m,
+    body: { orderId: `SS-${key}-${Date.now()}`, amountPaise, description: item, shopperPhone: phoneOf[key], returnUrl: 'http://localhost:3002/order/x', instrument: { method: 'card', cardToken: cards[0].token } },
+  });
+  const authId = created.nextAction.url.split('/').at(-1);
+  await http(`${ECO_API}/bank/v1/card-auth/${authId}/otp`, { method: 'POST', body: { otp: '123456' } });
+}
+
+async function until(fn, what, ms = 15000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const v = await fn().catch(() => null);
+    if (v) return v;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`Timed out: ${what}`);
+}
+
+// ── Browser helpers ─────────────────────────────────────────────────────────
+const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, protocolTimeout: 60000 });
+const page = await browser.newPage();
+await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+let pageErrors = [];
+page.on('pageerror', (e) => pageErrors.push(e.message));
+
+async function signIn(key) {
+  const token = await login(key);
+  await page.goto(`${CRED}/status`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate((t) => localStorage.setItem('cred_demo_token', t), token);
+  return token;
+}
+
+/** Wait until skeletons are gone and the screen has rendered. */
+async function settle() {
+  const end = Date.now() + 20000;
+  while (Date.now() < end) {
+    try {
+      const ready = await page.evaluate(() => document.querySelector('main') && !document.querySelector('.animate-pulse, [aria-label^="Loading"]'));
+      if (ready) break;
+    } catch {
+      /* navigating */
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  await new Promise((r) => setTimeout(r, 450)); // let entrance motion finish
+}
+
+async function axe(label) {
+  await page.evaluate(AXE);
+  const r = await page.evaluate(async () => {
+    // eslint-disable-next-line no-undef
+    const res = await axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21aa', 'best-practice'], rules: { region: { enabled: false } } });
+    return res.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').map((v) => `${v.id}: ${v.help} (${v.nodes.length}) e.g. ${v.nodes[0]?.target.join(' ')}`);
+  });
+  for (const v of r) failures.push(`[axe] ${label}: ${v}`);
+}
+
+async function visit(url, label, { shot, expectError = false } = {}) {
+  pageErrors = [];
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await settle();
+  await check(label, { shot, expectError });
+}
+
+async function check(label, { shot, expectError = false } = {}) {
+  const text = await page.evaluate(() => document.body.innerText);
+  if (!expectError && text.includes('Something didn’t load')) failures.push(`${label}: shows an error state`);
+  for (const e of pageErrors) failures.push(`${label}: page error: ${e}`);
+  pageErrors = [];
+  await axe(label);
+  if (shot) await snap(shot);
+}
+
+/** Full-height capture: size the viewport to the page so sticky bars sit where a scrolled user sees them. */
+async function snap(name) {
+  const h = await page.evaluate(() => document.documentElement.scrollHeight);
+  await page.setViewport({ width: 390, height: Math.max(844, h), deviceScaleFactor: 2 });
+  await new Promise((r) => setTimeout(r, 150));
+  await page.screenshot({ path: path.join(OUT, `${name}.png`) });
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+}
+
+async function clickText(text, selector = 'button, a, label') {
+  await until(
+    () =>
+      page.evaluate(
+        (t, s) => {
+          const el = [...document.querySelectorAll(s)].find((e) => e.textContent.includes(t) && !e.disabled);
+          if (!el) return false;
+          el.click();
+          return true;
+        },
+        text,
+        selector,
+      ),
+    `click "${text}"`,
+  );
+}
+// Case-insensitive: innerText applies CSS text-transform (overlines are uppercase)
+const waitText = (t, ms = 15000) => until(() => page.evaluate((x) => document.body.innerText.toLowerCase().includes(x.toLowerCase()), t), `text "${t}"`, ms);
+
+// ── Run ─────────────────────────────────────────────────────────────────────
+if (existsSync(OUT)) rmSync(OUT, { recursive: true });
+mkdirSync(OUT, { recursive: true });
+await reset();
+
+// Signed-out
+await page.goto(`${CRED}/status`, { waitUntil: 'domcontentloaded' });
+await page.evaluate(() => localStorage.clear());
+await visit(CRED, 'sign-in', { shot: '01-sign-in' });
+
+// Every screen, every persona
+for (const key of PERSONAS) {
+  const token = await signIn(key);
+  const { cards } = await http(`${CRED_API}/v1/cards`, { headers: asMember(token) });
+  const first = key === 'aarav';
+  await visit(`${CRED}/`, `${key} home`, { shot: first ? '02-home' : `persona-${key}-home` });
+  await visit(`${CRED}/cards`, `${key} cards`, { shot: first ? '03-cards' : undefined });
+  await visit(`${CRED}/cards/${cards[0].id}`, `${key} card detail`, { shot: first ? '04-card-detail' : undefined });
+  await visit(`${CRED}/pay/${cards[0].id}`, `${key} bill pay`, { shot: first ? '05-bill-pay' : undefined });
+  await visit(`${CRED}/upi`, `${key} upi`, { shot: first ? '10-upi' : undefined });
+  await visit(`${CRED}/rewards`, `${key} rewards`, { shot: first ? '15-rewards' : undefined });
+  await visit(`${CRED}/loans`, `${key} loans`, { shot: key === 'kabir' ? '24-loans-empty' : undefined });
+  await visit(`${CRED}/profile`, `${key} profile`, { shot: first ? '25-profile' : undefined });
+  await visit(`${CRED}/profile/data`, `${key} data and decisions`, { shot: key === 'kabir' ? '26-data-empty' : undefined });
+  await visit(`${CRED}/permissions`, `${key} permissions`, { shot: key === 'sneha' ? '27-permissions' : undefined });
+  log(`${key}: all screens render`);
+}
+
+// Error state
+await signIn('aarav');
+await visit(`${CRED}/cards/not-a-card`, 'error state', { shot: '28-error-state', expectError: true });
+
+// Bill pay: custom amount (Kabir) → partial recorded
+{
+  const token = await signIn('kabir');
+  const { cards } = await http(`${CRED_API}/v1/cards`, { headers: asMember(token) });
+  await visit(`${CRED}/pay/${cards[0].id}`, 'kabir pay');
+  await clickText('Another amount', 'label');
+  await page.waitForSelector('input[inputmode=decimal]');
+  await page.type('input[inputmode=decimal]', '20000');
+  await settle();
+  await check('bill pay custom', { shot: '06-bill-pay-custom' });
+  await clickText('Pay ₹20,000', 'button');
+  await waitText('Payment successful');
+  await settle();
+  await check('bill pay done', { shot: '07-bill-paid-partial' });
+  await visit(`${CRED}/cards/${cards[0].id}`, 'kabir card after partial', { shot: '08-card-part-paid' });
+  log('bill pay: partial payment recorded and shown');
+}
+
+// Bill pay refused (Rohan can't cover the full bill)
+{
+  const token = await signIn('rohan');
+  const { cards } = await http(`${CRED_API}/v1/cards`, { headers: asMember(token) });
+  await visit(`${CRED}/pay/${cards[0].id}`, 'rohan pay');
+  await clickText('Pay ₹', 'button');
+  await waitText('doesn’t have enough balance');
+  await settle();
+  await check('bill pay refused', { shot: '09-bill-pay-insufficient' });
+  log('bill pay: insufficient funds shown kindly');
+}
+
+// UPI: Priya pays Meera through the switch's PIN page
+{
+  await signIn('priya');
+  await visit(`${CRED}/upi/pay?vpa=meera.joshi%40mockbank&name=Meera%20Joshi`, 'upi amount');
+  await page.type('input[inputmode=decimal]', '750');
+  await page.type('input[maxlength="50"]', 'Movie night');
+  await settle();
+  await check('upi amount', { shot: '11-upi-amount' });
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Pay ₹750', 'button')]);
+  await until(() => page.evaluate(() => !!document.querySelector('input[type=password]')), 'PIN page');
+  await settle();
+  await check('upi pin page', { shot: '12-upi-pin' });
+  await page.type('input[type=password]', '0000');
+  await clickText('Pay', 'button[type=submit]');
+  await waitText('Incorrect UPI PIN');
+  await check('upi wrong pin', { shot: '13-upi-wrong-pin' });
+  await page.type('input[type=password]', '1234');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Pay', 'button[type=submit]')]);
+  await waitText('UPI ref (RRN)', 20000);
+  await settle();
+  await check('upi success', { shot: '14-upi-success' });
+  log('UPI: PIN page → success');
+}
+
+// Rewards: Sneha redeems
+{
+  await signIn('sneha');
+  await visit(`${CRED}/rewards`, 'sneha rewards');
+  await clickText('Redeem', 'button');
+  await waitText('Redeem this reward?');
+  await settle();
+  await check('rewards confirm', { shot: '16-rewards-confirm' });
+  await until(
+    () => page.evaluate(() => {
+      const b = [...document.querySelectorAll('[role=dialog] button')].find((x) => x.textContent === 'Redeem');
+      b?.click();
+      return !!b;
+    }),
+    'confirm redeem',
+  );
+  await waitText('Voucher ready to use');
+  await settle();
+  await check('rewards voucher', { shot: '17-rewards-voucher' });
+  log('rewards: redeemed');
+}
+
+// Money moments: Aarav's laptop → Smart Savings → compare → key facts → OTP → EMI
+{
+  const token = await signIn('aarav');
+  await page.goto(CRED, { waitUntil: 'domcontentloaded' });
+  await settle();
+  await buy('aarav', 1_50_000_00, 'Aero 14 Laptop');
+  await waitText('Turn on', 20000);
+  await settle();
+  await check('smart savings card', { shot: '18-home-smart-savings' });
+  await clickText('Turn on', 'button');
+  await waitText('Compare', 15000);
+  await settle();
+  await check('offer card', { shot: '19-home-offer' });
+  await clickText('Why am I seeing this?', 'summary');
+  await snap('19b-home-offer-why');
+  const offerId = (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active.id;
+  await visit(`${CRED}/offers/${offerId}`, 'compare', { shot: '20-compare' });
+  await visit(`${CRED}/offers/${offerId}/key-facts?option=emi`, 'key facts', { shot: '21-key-facts' });
+  await page.click('input[type=checkbox]');
+  await clickText('Accept', 'button');
+  await page.waitForSelector('input[autocomplete=one-time-code]');
+  await page.type('input[autocomplete=one-time-code]', '654321');
+  await settle();
+  await check('lender otp', { shot: '22-key-facts-otp' });
+  await clickText('Confirm and sign', 'button');
+  await until(() => page.evaluate(() => location.pathname.startsWith('/loans/')), 'EMI schedule', 20000);
+  await settle();
+  await check('emi schedule', { shot: '23-emi-schedule' });
+  log('money moment: offer → key facts → OTP → EMI schedule');
+}
+
+// Help card (Rohan after a big purchase)
+{
+  await signIn('rohan');
+  await buy('rohan', 1_50_000_00, 'Aero 14 Laptop');
+  await page.goto(CRED, { waitUntil: 'domcontentloaded' });
+  await waitText('Here to help', 20000);
+  await settle();
+  await check('help card', { shot: '29-home-help' });
+  log('help card shown for Rohan');
+}
+
+await browser.close();
+await reset(); // leave a clean demo world
+
+if (failures.length) {
+  console.error(`\n${failures.length} problem(s):\n${failures.map((f) => `  ✗ ${f}`).join('\n')}`);
+  process.exit(1);
+}
+console.log(`\nAll screens passed for ${PERSONAS.length} personas. Screenshots in docs/screenshots/${milestone}/`);

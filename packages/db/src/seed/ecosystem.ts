@@ -50,6 +50,21 @@ export async function seedEcosystem(db: EcosystemDb, worlds: PersonaWorld[]): Pr
     });
     await db.bankTxn.createMany({ data: w.bankTxns.map((t) => ({ accountId: w.ids.account, ...t })) });
     await db.vpa.create({ data: { handle: p.vpa, name: p.name, personId: w.ids.person, accountId: w.ids.account, pin: DEMO_UPI_PIN } });
+    await db.upiTxn.createMany({
+      data: w.upiPayments.map((u) => ({
+        id: `utx_${u.id}`,
+        payerVpa: p.vpa,
+        payeeVpa: u.payeeVpa,
+        amountPaise: u.amountPaise,
+        note: u.note,
+        status: 'success',
+        rrn: u.rrn,
+        initiatedVia: 'cred',
+        clientRef: u.id,
+        returnUrl: 'http://localhost:3000/upi',
+        createdAt: u.at,
+      })),
+    });
 
     await db.creditCardAccount.create({
       data: {

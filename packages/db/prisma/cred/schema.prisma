@@ -47,6 +47,25 @@ model Member {
   sellIntents       SellIntent[]
   events            DomainEvent[]
   audit             AuditLog[]
+  rewards           RewardEntry[]
+}
+
+/// Coins ledger: balance is the sum of entries
+model RewardEntry {
+  id          String   @id @default(cuid())
+  memberId    String
+  /// earned | redeemed | opening
+  kind        String
+  coins       Int
+  description String
+  /// e.g. the bill payment that earned it; unique so nothing is credited twice
+  sourceRef   String?  @unique
+  voucherCode String?
+  at          DateTime @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, at])
 }
 
 model Card {
@@ -107,6 +126,8 @@ model BillPayment {
   externalRef String?  @unique
   /// full | minimum | custom
   kind        String
+  /// upi | netbanking (null for history before CRED tracked it)
+  source      String?
   amountPaise Int
   paidAt      DateTime
   onTime      Boolean
@@ -126,6 +147,7 @@ model UpiTransaction {
   /// awaiting_pin | success | failed
   status      String
   rrn         String?
+  failureReason String?
   createdAt   DateTime @default(now())
 
   member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)

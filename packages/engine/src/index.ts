@@ -6,3 +6,4 @@ export * from './pipeline';
 export * from './checks/stress';
 export * from './features/big-spend';
 export * from './key-facts';
+export * from './member-copy';

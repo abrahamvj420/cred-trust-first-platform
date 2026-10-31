@@ -37,6 +37,8 @@ export interface PersonaWorld {
   onTimeStreak: number;
   bankTxns: { kind: 'salary' | 'debit' | 'credit' | 'card_payment'; amountPaise: number; narration: string; at: Date }[];
   stepDays: { date: string; steps: number }[];
+  /** Past UPI payments made from the CRED app. */
+  upiPayments: { id: string; payeeVpa: string; payeeName: string; amountPaise: number; note: string | null; at: Date; rrn: string }[];
 }
 
 const roundUpToRupee = (paise: number) => Math.ceil(paise / 100) * 100;
@@ -186,7 +188,23 @@ export function buildPersonaWorld(fixture: PersonaFixture): PersonaWorld {
       }))
     : [];
 
+  const upiPicks = [
+    { payeeVpa: 'ramesh.tea@mockbank', payeeName: 'Ramesh Tea Stall', min: 40, max: 160, note: 'Chai' },
+    { payeeVpa: 'freshbasket@mockbank', payeeName: 'FreshBasket Groceries', min: 900, max: 2_800, note: 'Groceries' },
+    { payeeVpa: 'meera.joshi@mockbank', payeeName: 'Meera Joshi', min: 300, max: 1_500, note: 'Dinner split' },
+  ];
+  const upiPayments = upiPicks.map((u, i) => ({
+    id: `upi_${key}_${i}`,
+    payeeVpa: u.payeeVpa,
+    payeeName: u.payeeName,
+    amountPaise: rupees(Math.round(u.min + rand() * (u.max - u.min))),
+    note: u.note,
+    at: at(addDays(SIM_START_DATE, -(i * 3 + 1)), 10 + i * 3, 15),
+    rrn: String(600_000_000_000 + Math.floor(rand() * 99_999_999_999)),
+  }));
+
   return {
+    upiPayments,
     fixture,
     persona,
     ids: { person: `per_${key}`, card: `cc_${key}`, cardToken: `tok_${key}_${card.last4}`, account: `acc_${key}`, member: `mem_${key}` },

@@ -7,6 +7,7 @@ import { adminHandlers } from './admin';
 import { createCtx } from './context';
 import { Hub } from './hub';
 import { memberHandlers } from './member';
+import { moneyHandlers } from './money';
 import { bearer, issueToken, verifyToken } from './session';
 import { ingestWebhook } from './webhooks';
 
@@ -14,13 +15,14 @@ loadRootEnv();
 const db = createCredDb();
 const hub = new Hub();
 
-const toMember = (m: { id: string; personaKey: string; name: string; phone: string; city: string; memberSince: string }): Member => ({
+const toMember = (m: { id: string; personaKey: string; name: string; phone: string; city: string; memberSince: string; vpa: string }): Member => ({
   id: m.id,
   personaKey: PersonaKey.parse(m.personaKey),
   name: m.name,
   phoneMasked: `XXXXXX${m.phone.slice(-4)}`,
   city: m.city,
   memberSince: m.memberSince,
+  vpa: m.vpa,
 });
 
 const svc = createService({
@@ -75,6 +77,7 @@ const h = handlers()
   });
 
 memberHandlers(ctx, h);
+moneyHandlers(ctx, h);
 adminHandlers(ctx, h);
 
 svc.implement(credApi, h.map);

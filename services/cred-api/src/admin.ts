@@ -23,6 +23,7 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
           phoneMasked: `XXXXXX${m.phone.slice(-4)}`,
           city: m.city,
           memberSince: m.memberSince,
+          vpa: m.vpa,
           smartSavings: m.permissions.some((p) => p.scope === 'smart_savings' && p.status === 'granted'),
           stressed: stressSignals(await buildSnapshot(ctx, m.id), activeRules()).length > 0,
           offersThisMonth: m.offers.filter((o) => o.simDate.startsWith(month)).length,

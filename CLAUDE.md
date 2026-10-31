@@ -170,6 +170,28 @@ Keep the rates and fees in a single constants module (`packages/engine/src/const
 - All money in **₹ with Indian number formatting** (e.g. ₹1,00,000, ₹17,300; use `en-IN` locale).
 - Every offer card shows the rupee saving prominently, plus a clear "No thanks" of equal weight.
 
+## Working rules for M4–M7
+
+- Tests and the boundary checker must pass before finishing. If a failure can't be fixed properly, **stop and report**: never skip, weaken or delete tests.
+- When a milestone is done: commit, tag (`m4`, `m5`, …), push (with tags).
+- Keep `REVIEW.md` at the repo root: one section per milestone with what was built, decisions made without asking (with reasons), deviations from plan, known gaps, and screenshots of every new or changed screen in `docs/screenshots/<milestone>/` (run `pnpm screenshots <milestone>` with `pnpm dev` up; it also sweeps every screen for all five personas and runs axe).
+- Keep this file up to date, including each milestone brief.
+
+## Design system (M4)
+
+- Tokens live in `packages/ui/src/themes` (colour, type scale, spacing, radius, elevation, motion) and reach Tailwind through `packages/ui/src/tailwind.css` (`text-display`, `p-card`, `shadow-e2`, `animate-enter`, `transition-calm`, …). Build screens only from tokens and `@cred/ui` components.
+- Accessibility bar: AA contrast (theme tests cover text, muted, accent and status colours on every surface), 44px minimum tap targets (Button ≥ 44px, ListRow ≥ 56px), a label on every input (`Field`, `Choice`), loading, empty and error states on every screen.
+- Member app: 390px phone frame centred on desktop; signed-in screens use `Screen` (top bar, optional sticky footer, tab bar). Data comes through `useApi` (`apps/cred/lib/live.tsx`), which refetches when cred-api pushes an SSE event.
+- Member-facing copy is supportive: never "stress", "risk" or "blocked" (tested in the engine and by the boundary checker).
+- Money moves on simulated time: new records (bill payments, UPI, reward entries) use the sim clock, as the seed does.
+- Partner 4xx errors pass through cred-api with their own code and message; partner 5xx → 502.
+
+## M4 brief (as given)
+
+CRED app shell, fully polished, with the highest design bar in the project: premium, dark, minimal, mobile-first (390px phone frame, centred on desktop). Extend the cred theme with typography, spacing, radius, elevation and motion tokens first, then build all screens from them. Restrained motion, Indian number formatting, no CRED logos or trademarks.
+Screens: Home (greeting, upcoming bills, cards summary, active offer with "Why am I seeing this?", any help card, rewards balance; bill pay one tap from home) · Cards (due amount, due date, utilisation; detail with recent transactions and Convert to EMI) · Bill pay (full or custom, UPI or bank, confirmation; partial payments recorded correctly) · UPI pay (UPI ID or contact, amount, mock UPI PIN screen in the ecosystem app, success) · Rewards (balance, earn history, redeemable rewards) · Money moments restyled · Loans (active loans, schedule, next due) · Profile (details, Permissions, "Your data and decisions").
+Every screen: loading, empty and error states; AA contrast; 44px tap targets; labels on all inputs; data only via cred-api (contracts first); works for all five personas. Also folded in: the decision feed moved to Profile → "Your data and decisions", and supportive member wording for blocked offers.
+
 ## Milestones
 
 Commit after each. The golden path must work from M2 onward.

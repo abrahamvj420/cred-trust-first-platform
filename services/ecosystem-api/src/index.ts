@@ -4,7 +4,8 @@ import { createService, handlers, HttpError, isDemoMode, loadRootEnv, requireEnv
 import { ecosystemApi } from '@cred/types';
 import { lenderHandlers } from './lender';
 import { createOutbox } from './outbox';
-import { ecosystemPagesUrl, railsHandlers } from './rails';
+import { billPayHandlers, ecosystemPagesUrl, railsHandlers } from './rails';
+import { upiHandlers } from './upi';
 
 loadRootEnv();
 const db = createEcosystemDb();
@@ -51,6 +52,8 @@ const h = handlers()
   });
 
 railsHandlers(ctx, h);
+billPayHandlers(ctx, h);
+upiHandlers(ctx, h);
 lenderHandlers(ctx, h);
 
 svc.implement(ecosystemApi, h.map);

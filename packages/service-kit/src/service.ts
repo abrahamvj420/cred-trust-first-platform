@@ -1,5 +1,6 @@
 import cors from '@fastify/cors';
 import {
+  ApiError,
   type Endpoint,
   type EndpointAuth,
   type EndpointBody,
@@ -66,6 +67,14 @@ export function createService(opts: ServiceOptions) {
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof HttpError) {
       return reply.status(err.status).send({ error: { code: err.code, message: err.message, details: err.details } });
+    }
+    // A partner refused (4xx): pass its reason through. A partner failure (5xx/unreachable) is a 502.
+    if (err instanceof ApiError) {
+      if (err.status >= 400 && err.status < 500) {
+        return reply.status(err.status).send({ error: { code: err.code, message: err.message } });
+      }
+      req.log.error(err);
+      return reply.status(502).send({ error: { code: 'partner_unavailable', message: 'A partner service is unavailable. Please try again.' } });
     }
     if (err instanceof z.ZodError) {
       return reply.status(400).send({ error: { code: 'validation_failed', message: 'Request failed validation', details: z.treeifyError(err) } });

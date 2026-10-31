@@ -1,40 +1,46 @@
 'use client';
 
 import { credApi, type PersonaSummary } from '@cred/types';
-import { Surface } from '@cred/ui';
+import { Avatar, ErrorState, List, ListRow, LoadingScreen } from '@cred/ui';
 import { useEffect, useState } from 'react';
 import { api, errorText, session } from '@/lib/api';
 
 export function Login() {
-  const [personas, setPersonas] = useState<PersonaSummary[]>([]);
+  const [personas, setPersonas] = useState<PersonaSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    api(credApi.member.personas).then((r) => setPersonas(r.personas), (e) => setError(errorText(e)));
-  }, []);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = () => {
+    setError(null);
+    api(credApi.member.personas).then((r) => setPersonas(r.personas), (e) => setError(`${errorText(e)}. Is cred-api running?`));
+  };
+  useEffect(load, []);
 
   async function login(key: PersonaSummary['key']) {
-    const r = await api(credApi.member.demoLogin, { body: { personaKey: key } });
-    session.set(r.token);
-    window.location.href = '/';
+    setBusy(key);
+    try {
+      const r = await api(credApi.member.demoLogin, { body: { personaKey: key } });
+      session.set(r.token);
+      window.location.href = '/';
+    } catch (e) {
+      setError(errorText(e));
+      setBusy(null);
+    }
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-4 py-10">
-      <h1 className="text-2xl font-semibold">Sign in to the demo</h1>
-      <p className="text-sm text-muted">Pick a synthetic member. No real accounts or data.</p>
-      <ul className="flex flex-col gap-3">
-        {personas.map((p) => (
-          <li key={p.key}>
-            <button onClick={() => login(p.key)} className="w-full text-left">
-              <Surface className="flex flex-col gap-1 hover:border-accent">
-                <span className="font-semibold">{p.name} · {p.city}</span>
-                <span className="text-sm text-muted">{p.tagline}</span>
-              </Surface>
-            </button>
-          </li>
-        ))}
-      </ul>
-      {error ? <p className="text-sm text-negative">{error} Is cred-api running?</p> : null}
+    <main className="flex flex-1 animate-enter flex-col justify-center gap-section px-gutter py-12">
+      <div className="flex flex-col gap-3">
+        <p className="text-overline uppercase text-accent">Prototype · synthetic data</p>
+        <h1 className="text-display">Pay bills. Earn rewards. Save only when it’s real.</h1>
+        <p className="text-callout text-muted">Choose a demo member to sign in. No real accounts, cards or money.</p>
+      </div>
+      {error ? <ErrorState message={error} onRetry={load} /> : !personas ? <LoadingScreen label="Loading members" /> : (
+        <List>
+          {personas.map((p) => (
+            <ListRow key={p.key} onClick={() => login(p.key)} leading={<Avatar name={p.name} />} title={busy === p.key ? 'Signing in…' : `${p.name} · ${p.city}`} subtitle={p.tagline} chevron />
+          ))}
+        </List>
+      )}
     </main>
   );
 }

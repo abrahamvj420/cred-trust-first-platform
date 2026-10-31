@@ -111,4 +111,38 @@ export function railsHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
   });
 }
 
+/** Card bill payment collected by a payment app (CRED) from the member's own Mock Bank account. */
+export function billPayHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
+  const { db } = ctx;
+  h.on(ecosystemApi.bank.payCardBill, async ({ body }) => {
+    const card = await db.creditCardAccount.findUnique({ where: { id: body.cardRef } });
+    const statement = await db.cardStatement.findUnique({ where: { id: body.statementRef } });
+    if (!card || !statement || statement.cardAccountId !== card.id) throw notFound('Card statement');
+    if (body.amountPaise > card.outstandingPaise) throw new HttpError(422, 'overpayment', 'That’s more than the card balance.');
+    const account = await db.bankAccount.findFirst({ where: { personId: card.personId } });
+    if (!account || account.balancePaise < body.amountPaise) {
+      throw new HttpError(422, 'insufficient_funds', 'Your Mock Bank account doesn’t have enough balance for this payment.');
+    }
+    const receivedAt = await simNow(db);
+    const onTime = receivedAt.toISOString().slice(0, 10) <= statement.dueDate;
+    const [payment, updatedStatement, updatedCard] = await db.$transaction([
+      db.cardPayment.create({ data: { statementId: statement.id, amountPaise: body.amountPaise, receivedAt, onTime, clientRef: body.clientRef } }),
+      db.cardStatement.update({ where: { id: statement.id }, data: { paidPaise: { increment: body.amountPaise } } }),
+      db.creditCardAccount.update({ where: { id: card.id }, data: { outstandingPaise: { decrement: body.amountPaise } } }),
+      db.bankAccount.update({ where: { id: account.id }, data: { balancePaise: { decrement: body.amountPaise } } }),
+      db.bankTxn.create({
+        data: { accountId: account.id, kind: 'card_payment', amountPaise: -body.amountPaise, narration: `CARD BILL ${body.source === 'upi' ? 'UPI' : 'NETBANKING'} XX${card.last4}`, at: receivedAt },
+      }),
+    ]);
+    return {
+      paymentRef: payment.id,
+      status: 'received' as const,
+      onTime,
+      receivedAt: receivedAt.toISOString(),
+      statementPaidPaise: updatedStatement.paidPaise,
+      outstandingPaise: updatedCard.outstandingPaise,
+    };
+  });
+}
+
 export const ecosystemPagesUrl = () => process.env.ECOSYSTEM_APP_URL ?? localUrl('ecosystem');

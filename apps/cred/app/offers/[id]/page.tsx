@@ -1,76 +1,85 @@
 'use client';
 
-import { credApi, type Offer } from '@cred/types';
-import { Button, Money, Surface } from '@cred/ui';
+import { credApi } from '@cred/types';
+import { Badge, Button, ButtonLink, Card, ErrorState, LoadingScreen, Money, Notice } from '@cred/ui';
 import { useParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { api, errorText } from '@/lib/api';
+import { useState } from 'react';
+import { api } from '@/lib/api';
+import { useApi } from '@/lib/live';
+import { Why } from '../../_components/Cards';
+import { Screen } from '../../_shell/Screen';
 
-/** Card vs EMI vs loan, side by side, every number from the engine's savings method. */
+/** Pay in full vs card vs EMI vs loan, side by side; every number from the engine's savings method. */
 export default function OfferPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [offer, setOffer] = useState<Offer | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api(credApi.products.offer, { params: { offerId: id } }).then((r) => setOffer(r.offer), (e) => setError(errorText(e)));
-  }, [id]);
+  const q = useApi(credApi.products.offer, { params: { offerId: id } });
+  const [busy, setBusy] = useState(false);
+  const offer = q.data?.offer;
+  const open = offer?.status === 'shown';
 
   async function decline() {
-    await api(credApi.products.declineOffer, { params: { offerId: id }, body: {} });
+    setBusy(true);
+    await api(credApi.products.declineOffer, { params: { offerId: id }, body: {} }).catch(() => undefined);
     router.push('/');
   }
 
-  if (error) return <p className="p-6 text-negative">{error}</p>;
-  if (!offer) return <p className="p-6 text-muted">Loading…</p>;
-  const open = offer.status === 'shown';
-
   return (
-    <main className="mx-auto flex max-w-3xl flex-col gap-5 px-4 py-6">
-      <a href="/" className="text-sm text-muted">← Home</a>
-      <h1 className="text-2xl font-semibold">{offer.headline}</h1>
-      <p className="text-muted">{offer.subline}</p>
-      {!open ? <p className="text-sm text-warning">This offer is {offer.status.replace('_', ' ')}.</p> : null}
+    <Screen title="Your options" back="/" footer={open ? <Button block variant="secondary" loading={busy} onClick={decline}>No thanks</Button> : null}>
+      {q.error && !offer ? (
+        <ErrorState message={q.error} onRetry={q.reload} />
+      ) : !offer ? (
+        <LoadingScreen label="Loading options" />
+      ) : (
+        <>
+          <div className="flex flex-col gap-2">
+            <h2 className="text-title">{offer.headline}</h2>
+            <p className="text-callout text-muted">{offer.subline}</p>
+            <Why text={offer.why} />
+          </div>
+          {!open ? <Notice tone="info">This suggestion is {offer.status.replace('_', ' ')}.</Notice> : null}
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        {offer.options.map((o) => (
-          <Surface key={o.key} className={`flex flex-col gap-2 ${o.recommended ? 'border-accent' : ''}`}>
-            <div className="flex items-start justify-between gap-2">
-              <h2 className="font-semibold">{o.label}</h2>
-              {o.recommended ? <span className="rounded-sm bg-accent px-2 py-0.5 text-xs font-semibold text-accent-text">Best value</span> : null}
-            </div>
-            <p className="text-sm text-muted">Total extra cost</p>
-            <Money paise={o.totalCostPaise} className="text-2xl font-semibold" />
-            {o.monthlyPaise ? <p className="text-sm"><Money paise={o.monthlyPaise} /> a month</p> : null}
-            <ul className="text-xs text-muted">
-              {o.lines.map((l) => (
-                <li key={l.label} className="flex justify-between gap-2">
-                  <span>{l.label}</span>
-                  <Money paise={l.amountPaise} />
-                </li>
-              ))}
-            </ul>
-            {o.note ? <p className="text-xs text-muted">{o.note}</p> : null}
-            {o.acceptable && open ? (
-              <a href={`/offers/${offer.id}/key-facts?option=${o.key}`} className="mt-auto inline-flex h-12 items-center justify-center rounded-md border border-border bg-raised text-sm font-semibold hover:border-accent">
-                Continue with {o.key === 'emi' ? 'EMI' : 'loan'}
-              </a>
-            ) : null}
-          </Surface>
-        ))}
-      </div>
-
-      <Surface className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold">Why am I seeing this?</h2>
-        <p className="text-sm text-muted">{offer.why}</p>
-      </Surface>
-
-      <Surface className="flex items-center justify-between">
-        <span className="text-sm">If you’d otherwise carry it, you save</span>
-        <Money paise={offer.netBenefitPaise} className="text-xl font-bold text-positive" />
-      </Surface>
-      {open ? <Button variant="secondary" onClick={decline}>No thanks</Button> : null}
-    </main>
+          <div className="flex flex-col gap-3">
+            {offer.options.map((o) => (
+              <Card key={o.key} elevation={o.recommended ? 2 : 1} className={`flex flex-col gap-3 ${o.recommended ? 'border-accent/60' : ''}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-headline">{o.label}</h3>
+                  {o.recommended ? <Badge tone="accent">Lowest cost</Badge> : o.key === 'pay_in_full' ? <Badge tone="positive">Cheapest</Badge> : null}
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-caption text-muted">Extra you pay</span>
+                  <Money paise={o.totalCostPaise} size="title" />
+                </div>
+                {o.monthlyPaise ? (
+                  <p className="text-caption text-muted">
+                    <Money paise={o.monthlyPaise} /> a month
+                  </p>
+                ) : null}
+                {o.lines.length ? (
+                  <ul className="flex flex-col gap-1 border-t border-border pt-3 text-caption text-muted">
+                    {o.lines.map((l) => (
+                      <li key={l.label} className="flex justify-between gap-3">
+                        <span>{l.label}</span>
+                        <Money paise={l.amountPaise} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+                {o.note ? <p className="text-caption text-muted">{o.note}</p> : null}
+                {o.acceptable && open ? (
+                  <ButtonLink href={`/offers/${offer.id}/key-facts?option=${o.key}`} variant={o.recommended ? 'primary' : 'secondary'} block>
+                    Continue with {o.key === 'emi' ? 'EMI' : 'loan'}
+                  </ButtonLink>
+                ) : null}
+              </Card>
+            ))}
+          </div>
+          <Card className="flex items-center justify-between">
+            <span className="text-callout">If you’d otherwise carry it, you save</span>
+            <Money paise={offer.netBenefitPaise} size="headline" className="text-positive" />
+          </Card>
+        </>
+      )}
+    </Screen>
   );
 }

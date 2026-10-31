@@ -21,13 +21,3 @@ export function stressSignals(s: MemberSnapshot, rules: RuleValues = DEFAULT_RUL
   if (utilisationBps(s) >= rules.stressUtilisationBps) out.push('high_utilisation');
   return out;
 }
-
-const PLAIN: Record<StressSignal, string> = {
-  missed_payment: 'a missed or late payment',
-  minimum_only_payments: 'minimum-only payments',
-  partial_payments: 'part-payments on recent bills',
-  high_utilisation: 'a card that is almost fully used',
-  falling_balance: 'a falling bank balance',
-};
-
-export const describeStress = (signals: StressSignal[]) => signals.map((x) => PLAIN[x]).join(', ');

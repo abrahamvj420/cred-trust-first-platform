@@ -4,6 +4,7 @@ import { endpoint } from '../contract';
 import {
   AaConsent,
   BillPayment,
+  BillPaymentSource,
   Card,
   CardTransaction,
   IncomeProfile,
@@ -13,6 +14,9 @@ import {
   Permission,
   PersonaSummary,
   Statement,
+  RewardEntry,
+  RewardItem,
+  UpiContact,
   UpiPayment,
 } from '../domain';
 import { AaPurpose, BillPaymentKind, PermissionScope, PersonaKey } from '../enums';
@@ -29,6 +33,8 @@ export const HomeSummary = z.object({
     .nullable(),
   smartSavingsGranted: z.boolean(),
   rewardsCoins: z.number().int().nonnegative(),
+  /** Today in the simulated world, for "due in N days". */
+  simDate: z.iso.date(),
 });
 export type HomeSummary = z.infer<typeof HomeSummary>;
 
@@ -41,6 +47,7 @@ export type StatementDetail = z.infer<typeof StatementDetail>;
 export const BillPayRequest = z
   .object({
     kind: BillPaymentKind,
+    source: BillPaymentSource,
     /** Required for kind=custom; ignored otherwise. */
     amountPaise: PositivePaise.optional(),
   })
@@ -53,7 +60,17 @@ export type BillPayRequest = z.infer<typeof BillPayRequest>;
 export const BillPayResponse = z.object({
   payment: BillPayment,
   statement: Statement,
+  card: Card,
+  coinsEarned: z.number().int().nonnegative(),
 });
+
+export const CardDetail = z.object({
+  card: Card,
+  statement: Statement.nullable(),
+  payments: z.array(BillPayment),
+  transactions: z.array(CardTransaction.extend({ convertible: z.boolean() })),
+});
+export type CardDetail = z.infer<typeof CardDetail>;
 
 export const UpiPayRequest = z.object({
   payeeVpa: z.string().regex(/^[\w.-]+@[\w]+$/, 'Enter a valid UPI ID'),
@@ -112,6 +129,14 @@ export const memberEndpoints = {
     summary: 'Cards CRED knows about',
     response: z.object({ cards: z.array(Card) }),
   }),
+  card: endpoint({
+    method: 'GET',
+    path: '/v1/cards/:cardId',
+    auth: 'member',
+    summary: 'Card detail: latest statement, payments, recent transactions',
+    params: CardParams,
+    response: CardDetail,
+  }),
   currentStatement: endpoint({
     method: 'GET',
     path: '/v1/cards/:cardId/statements/current',
@@ -152,6 +177,21 @@ export const memberEndpoints = {
     summary: 'Start a UPI payment through the UPI switch',
     body: UpiPayRequest,
     response: UpiPayInitResponse,
+  }),
+  upiContacts: endpoint({
+    method: 'GET',
+    path: '/v1/upi/contacts',
+    auth: 'member',
+    summary: 'People and shops on UPI (recent payees first)',
+    response: z.object({ contacts: z.array(UpiContact) }),
+  }),
+  upiResolve: endpoint({
+    method: 'GET',
+    path: '/v1/upi/resolve',
+    auth: 'member',
+    summary: 'Check a UPI ID and get the registered name',
+    query: z.object({ vpa: z.string().min(3).max(60) }),
+    response: z.object({ vpa: z.string(), name: z.string().nullable(), valid: z.boolean() }),
   }),
   upiStatus: endpoint({
     method: 'GET',
@@ -227,6 +267,21 @@ export const memberEndpoints = {
     auth: 'member',
     summary: 'Earned Credit Ladder status (shown, never pushed)',
     response: LadderStatus,
+  }),
+  rewards: endpoint({
+    method: 'GET',
+    path: '/v1/rewards',
+    auth: 'member',
+    summary: 'Coins balance, earn history and redeemable rewards',
+    response: z.object({ balance: z.number().int().nonnegative(), history: z.array(RewardEntry), catalog: z.array(RewardItem) }),
+  }),
+  redeemReward: endpoint({
+    method: 'POST',
+    path: '/v1/rewards/redeem',
+    auth: 'member',
+    summary: 'Redeem coins for a reward',
+    body: z.object({ rewardId: Id }),
+    response: z.object({ balance: z.number().int().nonnegative(), voucherCode: z.string(), reward: RewardItem }),
   }),
   logout: endpoint({
     method: 'POST',
