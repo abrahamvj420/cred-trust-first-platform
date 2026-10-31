@@ -1,4 +1,5 @@
-import { stressSignals } from '@cred/engine';
+import { formatRuleValue, LADDER_TIERS, RULE_DEFINITIONS, stressSignals, type RuleKey } from '@cred/engine';
+import { activeRules } from './engine-runner';
 import { handlers } from '@cred/service-kit';
 import { credApi } from '@cred/types';
 import type { Ctx } from './context';
@@ -23,7 +24,7 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
           city: m.city,
           memberSince: m.memberSince,
           smartSavings: m.permissions.some((p) => p.scope === 'smart_savings' && p.status === 'granted'),
-          stressed: stressSignals(await buildSnapshot(ctx, m.id)).length > 0,
+          stressed: stressSignals(await buildSnapshot(ctx, m.id), activeRules()).length > 0,
           offersThisMonth: m.offers.filter((o) => o.simDate.startsWith(month)).length,
           activeOfferId: m.offers.find((o) => ACTIVE_OFFER_STATUSES.includes(o.status))?.id ?? null,
         })),
@@ -67,6 +68,18 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
   h.on(credApi.admin.webhooks, async ({ query }) => {
     const rows = await db.inboundWebhook.findMany({ where: where(query.memberId), orderBy: { receivedAt: 'desc' }, take: query.limit });
     return { webhooks: rows.map((w) => ({ eventId: w.eventId, type: w.type, partner: w.partner, signatureOk: w.signatureOk, duplicate: w.duplicateCount > 0, receivedAt: w.receivedAt.toISOString() })) };
+  });
+
+  h.on(credApi.admin.rules, async () => {
+    const values = activeRules();
+    return {
+      rules: (Object.keys(RULE_DEFINITIONS) as RuleKey[]).map((key) => {
+        const d = RULE_DEFINITIONS[key];
+        return { key, group: d.group, label: d.label, unit: d.unit, value: values[key], display: formatRuleValue(d.unit, values[key]), description: d.description };
+      }),
+      ladder: LADDER_TIERS.map((t) => ({ ...t })),
+      editable: false,
+    };
   });
 
   h.on(credApi.admin.stream, async ({ reply }) => {

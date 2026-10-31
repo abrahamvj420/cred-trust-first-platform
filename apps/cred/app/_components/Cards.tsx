@@ -1,7 +1,7 @@
 'use client';
 
 import { credApi, type HelpPlan, type Offer } from '@cred/types';
-import { Button, Money, Surface } from '@cred/ui';
+import { Button, Surface } from '@cred/ui';
 import { useState } from 'react';
 import { api, errorText } from '@/lib/api';
 
@@ -9,7 +9,8 @@ import { api, errorText } from '@/lib/api';
 export function SmartSavingsCard({ offer, onDone }: { offer: Offer; onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const context = offer.trigger ? `Your ${offer.trigger.merchant} purchase` : offer.headline;
+  // The permission is asked with the same conditional wording as the offer.
+  const context = offer.headline;
 
   async function act(grant: boolean) {
     setBusy(true);
@@ -26,13 +27,12 @@ export function SmartSavingsCard({ offer, onDone }: { offer: Offer; onDone: () =
   return (
     <Surface className="flex flex-col gap-3 border-accent">
       <p className="text-xs font-semibold uppercase tracking-wider text-accent">Smart Savings</p>
-      <h2 className="text-lg font-semibold">
-        We found a way to save you <Money paise={offer.netBenefitPaise} /> on this purchase
-      </h2>
+      <h2 className="text-lg font-semibold">{offer.headline}</h2>
       <p className="text-sm text-muted">
         Turn on Smart Savings to let CRED look for savings on your card bills and suggest them, only when you gain in rupees and never more than one at a time.
         You can turn it off in one tap from Permissions.
       </p>
+      <Why text={offer.why} />
       <div className="grid grid-cols-2 gap-3">
         <Button variant="secondary" disabled={busy} onClick={() => act(false)}>Not now</Button>
         <Button disabled={busy} onClick={() => act(true)}>Turn on and show me</Button>
@@ -51,10 +51,10 @@ export function OfferCard({ offer, onDone }: { offer: Offer; onDone: () => void 
   }
   return (
     <Surface className="flex flex-col gap-3 border-accent">
-      <p className="text-xs font-semibold uppercase tracking-wider text-accent">You could save</p>
-      <p className="text-3xl font-bold text-positive"><Money paise={offer.netBenefitPaise} /></p>
+      <p className="text-xs font-semibold uppercase tracking-wider text-accent">If you can’t clear it by the due date</p>
       <h2 className="font-semibold">{offer.headline}</h2>
       <p className="text-sm text-muted">{offer.subline}</p>
+      <Why text={offer.why} />
       <div className="grid grid-cols-2 gap-3">
         <Button variant="secondary" disabled={busy} onClick={decline}>No thanks</Button>
         <a href={`/offers/${offer.id}`} className="inline-flex h-12 items-center justify-center rounded-md bg-accent px-5 text-sm font-semibold text-accent-text">
@@ -73,5 +73,15 @@ export function HelpCard({ help }: { help: HelpPlan }) {
       <p className="text-sm text-muted">{help.body}</p>
       <p className="text-xs text-muted">Repayment plans and a talk-to-us line arrive in a later milestone.</p>
     </Surface>
+  );
+}
+
+/** "Why am I seeing this?" — every offer carries its plain-English reason. */
+export function Why({ text, label = 'Why am I seeing this?' }: { text: string; label?: string }) {
+  return (
+    <details className="text-sm">
+      <summary className="cursor-pointer text-muted hover:text-text">{label}</summary>
+      <p className="mt-2 text-muted">{text}</p>
+    </details>
   );
 }

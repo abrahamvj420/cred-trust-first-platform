@@ -56,6 +56,7 @@ export const toOffer = (o: OfferRow): Offer =>
     options: json(o.optionsJson),
     terms: json(o.termsJson),
     trigger: json(o.triggerJson),
+    why: o.why,
     createdAt: iso(o.createdAt),
     decidedAt: o.decidedAt && iso(o.decidedAt),
   });
@@ -73,6 +74,7 @@ export const toDecision = (d: DecisionRow & { offer?: { id: string } | null }): 
     stressSignals: json(d.stressJson),
     netBenefitPaise: d.netBenefitPaise,
     offerId: d.offer?.id ?? null,
+    explanation: d.explanation,
     createdAt: iso(d.createdAt),
   });
 

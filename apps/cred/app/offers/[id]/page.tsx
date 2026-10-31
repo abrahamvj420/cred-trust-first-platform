@@ -61,8 +61,13 @@ export default function OfferPage() {
         ))}
       </div>
 
+      <Surface className="flex flex-col gap-2">
+        <h2 className="text-sm font-semibold">Why am I seeing this?</h2>
+        <p className="text-sm text-muted">{offer.why}</p>
+      </Surface>
+
       <Surface className="flex items-center justify-between">
-        <span className="text-sm">You save vs keeping it on the card</span>
+        <span className="text-sm">If you’d otherwise carry it, you save</span>
         <Money paise={offer.netBenefitPaise} className="text-xl font-bold text-positive" />
       </Surface>
       {open ? <Button variant="secondary" onClick={decline}>No thanks</Button> : null}

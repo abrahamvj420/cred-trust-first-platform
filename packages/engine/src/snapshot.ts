@@ -8,7 +8,7 @@ export interface MemberSnapshot {
   memberId: string;
   today: string; // YYYY-MM-DD (sim)
   card: { limitPaise: number; outstandingPaise: number };
-  /** Newest first. Settled statements have a payment kind; the open one has null. */
+  /** Newest first (up to 7: the open one plus six settled). Settled statements have a payment kind; the open one has null. */
   statements: {
     periodEnd: string;
     totalDuePaise: number;
@@ -19,8 +19,8 @@ export interface MemberSnapshot {
     onTime: boolean | null;
   }[];
   smartSavings: 'granted' | 'withdrawn' | 'never';
-  /** We already asked once for Smart Savings (asked once, at the first moment of value). */
-  smartSavingsPrompted: boolean;
+  /** Sim date we last asked for Smart Savings and the member didn't turn it on (null = never asked). */
+  smartSavingsLastAskedOn: string | null;
   verifiedMonthlyIncomePaise: number | null;
   existingEmiPaise: number;
   ladder: { tier: CreditTier; limitPaise: number };

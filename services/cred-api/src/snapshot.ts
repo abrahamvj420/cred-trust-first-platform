@@ -12,7 +12,7 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
   const member = await db.member.findUniqueOrThrow({
     where: { id: memberId },
     include: {
-      cards: { include: { statements: { orderBy: { periodEnd: 'desc' }, take: 6, include: { payments: true } } } },
+      cards: { include: { statements: { orderBy: { periodEnd: 'desc' }, take: 7, include: { payments: true } } } },
       permissions: true,
       income: true,
       ladder: true,
@@ -23,7 +23,9 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
   });
   const card = member.cards[0];
   const smart = member.permissions.find((p) => p.scope === 'smart_savings');
-  const prompted = await db.auditLog.count({ where: { memberId, action: 'permission.prompted', target: 'smart_savings' } });
+  // Last time we asked for Smart Savings (sim date recorded on the audit entry)
+  const lastPrompt = await db.auditLog.findFirst({ where: { memberId, action: 'permission.prompted', target: 'smart_savings' }, orderBy: { at: 'desc' } });
+  const lastAskedOn = lastPrompt ? ((JSON.parse(lastPrompt.detailsJson) as { simDate?: string }).simDate ?? lastPrompt.at.toISOString().slice(0, 10)) : null;
   const tier = CreditTier.parse(member.ladder?.tier ?? 'starter');
   const active = member.offers.find((o) => ACTIVE_OFFER_STATUSES.includes(o.status));
 
@@ -44,7 +46,7 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
       };
     }),
     smartSavings: smart ? (smart.status as 'granted' | 'withdrawn') : 'never',
-    smartSavingsPrompted: prompted > 0,
+    smartSavingsLastAskedOn: lastAskedOn,
     verifiedMonthlyIncomePaise: member.income?.monthlyNetPaise ?? null,
     existingEmiPaise: member.loans.reduce((a, l) => a + l.emiPaise, 0),
     ladder: { tier, limitPaise: LADDER_TIERS.find((t) => t.tier === tier)!.limitPaise },

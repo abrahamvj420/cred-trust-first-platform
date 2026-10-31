@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Id, IsoDate, Ok, PositivePaise } from '../common';
+import { Id, IsoDate, IsoDateTime, Ok, PositivePaise } from '../common';
 import { endpoint } from '../contract';
 import {
   Claim,
@@ -16,9 +16,21 @@ import {
   SellVsBorrow,
   WellnessStatus,
 } from '../domain';
-import { Relation, WearableProvider } from '../enums';
+import { DecisionOutcome, FeatureKey, Relation, TriggerOrigin, WearableProvider } from '../enums';
 
 const OfferParams = z.object({ offerId: Id });
+
+/** A decision as the member sees it: what happened and why, in plain English. */
+export const MemberDecision = z.object({
+  id: Id,
+  feature: FeatureKey,
+  origin: TriggerOrigin,
+  outcome: DecisionOutcome,
+  explanation: z.string(),
+  offerId: Id.nullable(),
+  createdAt: IsoDateTime,
+});
+export type MemberDecision = z.infer<typeof MemberDecision>;
 
 export const AcceptOption = z.enum(['emi', 'loan']);
 
@@ -105,6 +117,22 @@ export const productEndpoints = {
     params: OfferParams,
     body: z.object({ reason: z.string().max(120).optional() }),
     response: z.object({ offer: Offer }),
+  }),
+  convertToEmi: endpoint({
+    method: 'POST',
+    path: '/v1/transactions/:transactionId/convert-to-emi',
+    auth: 'member',
+    summary: 'Member asks to convert a purchase to EMI (member-initiated; no Smart Savings needed)',
+    params: z.object({ transactionId: Id }),
+    response: z.object({ decision: MemberDecision, offer: Offer.nullable() }),
+  }),
+  decisions: endpoint({
+    method: 'GET',
+    path: '/v1/decisions',
+    auth: 'member',
+    summary: 'Why we did or didn’t suggest something, for this member',
+    query: z.object({ limit: z.coerce.number().int().min(1).max(50).default(10) }),
+    response: z.object({ decisions: z.array(MemberDecision) }),
   }),
   loans: endpoint({
     method: 'GET',

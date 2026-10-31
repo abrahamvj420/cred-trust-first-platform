@@ -1,11 +1,14 @@
 import { LADDER_TIERS, loanKeyFacts } from '@cred/engine';
+import { activeRules, runBigSpend } from './engine-runner';
 import { conflict, forbidden, handlers, HttpError, notFound } from '@cred/service-kit';
-import { credApi, ecosystemApi, LoanTerms, type SessionClaims } from '@cred/types';
+import { credApi, ecosystemApi, LoanTerms, type EngineDecision, type SessionClaims } from '@cred/types';
 import type { Ctx } from './context';
-import { toCard, toHelp, toLoan, toOffer, toPermission, toStatement, toTxn, toPayment } from './mappers';
+import { toCard, toDecision, toHelp, toLoan, toOffer, toPermission, toStatement, toTxn, toPayment } from './mappers';
 import { ACTIVE_OFFER_STATUSES } from './snapshot';
 
 type H = ReturnType<typeof handlers>;
+
+const memberDecision = (d: EngineDecision) => ({ id: d.id, feature: d.feature, origin: d.origin, outcome: d.outcome, explanation: d.explanation, offerId: d.offerId, createdAt: d.createdAt });
 type Auth = SessionClaims;
 
 export function memberHandlers(ctx: Ctx, h: H) {
@@ -59,9 +62,39 @@ export function memberHandlers(ctx: Ctx, h: H) {
     return { ...toStatement(s), transactions: txns.map(toTxn), payments: s.payments.map(toPayment) };
   });
 
-  h.on<typeof credApi.member.transactions, Auth>(credApi.member.transactions, async ({ auth, query }) => ({
-    transactions: (await db.cardTransaction.findMany({ where: { card: { memberId: auth.memberId } }, orderBy: { postedAt: 'desc' }, take: query.limit })).map(toTxn),
-  }));
+  h.on<typeof credApi.member.transactions, Auth>(credApi.member.transactions, async ({ auth, query }) => {
+    const rows = await db.cardTransaction.findMany({ where: { card: { memberId: auth.memberId } }, orderBy: { postedAt: 'desc' }, take: query.limit });
+    const converted = new Set(
+      (await db.offer.findMany({ where: { memberId: auth.memberId, status: 'accepted', triggerRef: { in: rows.map((r) => r.externalRef) } } })).map((o) => o.triggerRef),
+    );
+    const min = activeRules().memberEmiMinPaise;
+    return { transactions: rows.map((t) => ({ ...toTxn(t), convertible: t.amountPaise >= min && !converted.has(t.externalRef) })) };
+  });
+
+  /** Member-initiated: "Convert to EMI" on a transaction. No Smart Savings needed; stress and affordability still apply. */
+  h.on<typeof credApi.products.convertToEmi, Auth>(credApi.products.convertToEmi, async ({ auth, params }) => {
+    const txn = await db.cardTransaction.findUnique({ where: { id: params.transactionId }, include: { card: true } });
+    if (!txn || txn.card.memberId !== auth.memberId) throw notFound('Transaction');
+    const forTxn = await db.offer.findMany({ where: { memberId: auth.memberId, triggerRef: txn.externalRef }, orderBy: { createdAt: 'desc' } });
+    if (forTxn.some((o) => o.status === 'accepted')) throw conflict('already_converted', 'This purchase is already on EMI');
+    const open = forTxn.find((o) => ACTIVE_OFFER_STATUSES.includes(o.status));
+    if (open) {
+      // Already have options for this purchase: show them (no permission needed now the member asked).
+      const shown = open.status === 'awaiting_permission' ? await db.offer.update({ where: { id: open.id }, data: { status: 'shown', origin: 'member_initiated' } }) : open;
+      const decision = await db.engineDecision.findUniqueOrThrow({ where: { id: shown.decisionId }, include: { offer: { select: { id: true } } } });
+      return { decision: memberDecision(toDecision(decision)), offer: toOffer(shown) };
+    }
+    await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'emi.requested', target: txn.id, details: { amountPaise: txn.amountPaise, merchant: txn.merchant } });
+    const { decisionId, offerId } = await runBigSpend(ctx, auth.memberId, { transactionRef: txn.externalRef, merchant: txn.merchant, amountPaise: txn.amountPaise }, null, 'member_initiated');
+    const decision = await db.engineDecision.findUniqueOrThrow({ where: { id: decisionId }, include: { offer: { select: { id: true } } } });
+    const offer = offerId ? await db.offer.findUniqueOrThrow({ where: { id: offerId } }) : null;
+    return { decision: memberDecision(toDecision(decision)), offer: offer ? toOffer(offer) : null };
+  });
+
+  h.on<typeof credApi.products.decisions, Auth>(credApi.products.decisions, async ({ auth, query }) => {
+    const rows = await db.engineDecision.findMany({ where: { memberId: auth.memberId }, include: { offer: { select: { id: true } } }, orderBy: { createdAt: 'desc' }, take: query.limit });
+    return { decisions: rows.map((d) => memberDecision(toDecision(d))) };
+  });
 
   // ── Offers ──────────────────────────────────────────────────────────────────
 
@@ -77,7 +110,7 @@ export function memberHandlers(ctx: Ctx, h: H) {
   h.on<typeof credApi.products.keyFacts, Auth>(credApi.products.keyFacts, async ({ auth, params, query }) => {
     const offer = toOffer(await loadOffer(auth.memberId, params.offerId));
     if (offer.status !== 'shown') throw conflict('offer_not_open', `Offer is ${offer.status}`);
-    return loanKeyFacts(offer.id, query.option, loanTermsFor(offer, query.option));
+    return loanKeyFacts(offer.id, query.option, loanTermsFor(offer, query.option), activeRules());
   });
 
   h.on<typeof credApi.products.acceptOffer, Auth>(credApi.products.acceptOffer, async ({ auth, params, body }) => {
@@ -142,7 +175,7 @@ export function memberHandlers(ctx: Ctx, h: H) {
     if (!ACTIVE_OFFER_STATUSES.includes(row.status)) return { offer: toOffer(row) };
     const updated = await db.offer.update({ where: { id: row.id }, data: { status: 'declined', decidedAt: new Date(), decidedSimDate: await ctx.simDate() } });
     if (row.status === 'awaiting_permission') {
-      await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'permission.prompt_declined', target: 'smart_savings', details: { offerId: row.id } });
+      await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'permission.prompt_declined', target: 'smart_savings', details: { offerId: row.id, simDate: await ctx.simDate() } });
     }
     await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'offer.declined', target: row.id, details: { reason: body.reason ?? null } });
     const view = toOffer(updated);
@@ -196,8 +229,14 @@ export function memberHandlers(ctx: Ctx, h: H) {
     await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'permission.withdrawn', target: params.scope });
     hub.member(auth.memberId, { type: 'permission.changed', data: { permission: toPermission(p) } });
     if (params.scope === 'smart_savings') {
-      // No proactive offers without permission: open ones lapse.
-      await db.offer.updateMany({ where: { memberId: auth.memberId, origin: 'proactive', status: { in: ACTIVE_OFFER_STATUSES } }, data: { status: 'expired', decidedAt: new Date() } });
+      // Stops immediately: open proactive offers lapse (logged), and the engine blocks new ones.
+      const open = await db.offer.findMany({ where: { memberId: auth.memberId, origin: 'proactive', status: { in: ACTIVE_OFFER_STATUSES } } });
+      for (const o of open) {
+        const expired = await db.offer.update({ where: { id: o.id }, data: { status: 'expired', decidedAt: new Date(), decidedSimDate: await ctx.simDate() } });
+        await ctx.audit({ memberId: auth.memberId, actor: 'system', action: 'offer.expired', target: o.id, details: { reason: 'Smart Savings withdrawn' } });
+        hub.member(auth.memberId, { type: 'offer.updated', data: { offer: toOffer(expired) } });
+        hub.admin({ type: 'offer.updated', data: { memberId: auth.memberId, offer: toOffer(expired) } });
+      }
     }
     return { permission: toPermission(p) };
   });

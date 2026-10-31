@@ -164,6 +164,8 @@ export const EngineDecision = z.object({
   stressSignals: z.array(StressSignal),
   netBenefitPaise: Paise.nullable(),
   offerId: Id.nullable(),
+  /** Plain-English "why am I seeing this / why not". */
+  explanation: z.string(),
   createdAt: IsoDateTime,
 });
 export type EngineDecision = z.infer<typeof EngineDecision>;
@@ -256,6 +258,8 @@ export const Offer = z.object({
   options: z.array(OfferOption),
   terms: OfferTerms,
   trigger: z.object({ merchant: z.string(), amountPaise: PositivePaise }).nullable(),
+  /** Plain-English "why am I seeing this". */
+  why: z.string(),
   createdAt: IsoDateTime,
   decidedAt: IsoDateTime.nullable(),
 });

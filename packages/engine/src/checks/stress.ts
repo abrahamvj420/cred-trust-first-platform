@@ -1,5 +1,5 @@
 import type { StressSignal } from '@cred/types';
-import { STRESS_LOOKBACK_STATEMENTS, STRESS_PARTIAL_PAYMENTS, STRESS_UTILISATION_BPS } from '../constants';
+import { DEFAULT_RULES, type RuleValues } from '../rules';
 import type { MemberSnapshot } from '../snapshot';
 
 export function utilisationBps(s: MemberSnapshot): number {
@@ -7,17 +7,27 @@ export function utilisationBps(s: MemberSnapshot): number {
 }
 
 /** Financial-stress signals. Any signal means: help, not credit. */
-export function stressSignals(s: MemberSnapshot): StressSignal[] {
+export function stressSignals(s: MemberSnapshot, rules: RuleValues = DEFAULT_RULES): StressSignal[] {
   const out: StressSignal[] = [];
-  const settled = s.statements.filter((x) => x.paymentKind !== null || x.dueDate < s.today).slice(0, STRESS_LOOKBACK_STATEMENTS);
+  const settled = s.statements.filter((x) => x.paymentKind !== null || x.dueDate < s.today).slice(0, rules.stressLookbackStatements);
 
   if (settled.some((x) => x.paymentKind === null && x.dueDate < s.today && x.paidPaise < x.minDuePaise) || settled.some((x) => x.onTime === false)) {
     out.push('missed_payment');
   }
   const minimumOnly = settled.filter((x) => x.paymentKind === 'minimum').length;
   const partial = settled.filter((x) => x.paymentKind === 'custom' && x.paidPaise < x.totalDuePaise).length;
-  if (minimumOnly >= STRESS_PARTIAL_PAYMENTS) out.push('minimum_only_payments');
-  if (minimumOnly + partial >= STRESS_PARTIAL_PAYMENTS) out.push('partial_payments');
-  if (utilisationBps(s) >= STRESS_UTILISATION_BPS) out.push('high_utilisation');
+  if (minimumOnly >= rules.stressPartialPayments) out.push('minimum_only_payments');
+  if (minimumOnly + partial >= rules.stressPartialPayments) out.push('partial_payments');
+  if (utilisationBps(s) >= rules.stressUtilisationBps) out.push('high_utilisation');
   return out;
 }
+
+const PLAIN: Record<StressSignal, string> = {
+  missed_payment: 'a missed or late payment',
+  minimum_only_payments: 'minimum-only payments',
+  partial_payments: 'part-payments on recent bills',
+  high_utilisation: 'a card that is almost fully used',
+  falling_balance: 'a falling bank balance',
+};
+
+export const describeStress = (signals: StressSignal[]) => signals.map((x) => PLAIN[x]).join(', ');

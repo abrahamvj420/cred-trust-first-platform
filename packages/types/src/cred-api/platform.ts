@@ -86,6 +86,24 @@ const AdminMemberRow = Member.extend({
   activeOfferId: Id.nullable(),
 });
 
+export const RuleSetting = z.object({
+  key: z.string(),
+  group: z.string(),
+  label: z.string(),
+  unit: z.enum(['bps', 'paise', 'days', 'count', 'months', 'multiple_bps']),
+  value: z.number(),
+  display: z.string(),
+  description: z.string(),
+});
+export type RuleSetting = z.infer<typeof RuleSetting>;
+
+export const LadderTierSetting = z.object({
+  tier: z.string(),
+  requiredOnTimeMonths: z.number().int(),
+  limitPaise: z.number().int(),
+  ratePaBps: z.number().int(),
+});
+
 const MemberFilter = z.object({
   memberId: Id.optional(),
   limit: z.coerce.number().int().min(1).max(500).default(100),
@@ -150,6 +168,13 @@ export const adminEndpoints = {
         z.object({ eventId: Id, type: z.string(), partner: z.string(), signatureOk: z.boolean(), duplicate: z.boolean(), receivedAt: IsoDateTime }),
       ),
     }),
+  }),
+  rules: endpoint({
+    method: 'GET',
+    path: '/admin/v1/rules',
+    auth: 'admin',
+    summary: 'Engine rule settings (read-only until M6)',
+    response: z.object({ rules: z.array(RuleSetting), ladder: z.array(LadderTierSetting), editable: z.boolean() }),
   }),
   stream: endpoint({
     method: 'GET',

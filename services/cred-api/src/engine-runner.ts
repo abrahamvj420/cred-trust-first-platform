@@ -1,5 +1,6 @@
-import { evaluateBigSpend, type CardPurchaseTrigger, type DecisionDraft, type QuoteInput } from '@cred/engine';
-import { ecosystemApi, formatInr } from '@cred/types';
+import { DEFAULT_RULES, evaluateBigSpend, type CardPurchaseTrigger, type DecisionDraft, type QuoteInput } from '@cred/engine';
+import type { TriggerOrigin } from '@cred/types';
+import { ecosystemApi } from '@cred/types';
 import type { Ctx } from './context';
 import { toDecision, toHelp, toOffer } from './mappers';
 import { buildSnapshot } from './snapshot';
@@ -20,19 +21,37 @@ async function fetchQuotes(ctx: Ctx, memberId: string, principalPaise: number, t
   });
 }
 
-/** Big-Spend Support for a posted card purchase. Every decision is saved, offer or not. */
-export async function runBigSpend(ctx: Ctx, memberId: string, trigger: CardPurchaseTrigger, triggerEventId: string): Promise<void> {
+/** Rule settings in force. M6 makes these editable; until then, the defaults. */
+export const activeRules = () => DEFAULT_RULES;
+
+/** Big-Spend Support for a card purchase. Every decision is saved, offer or not. */
+export async function runBigSpend(
+  ctx: Ctx,
+  memberId: string,
+  trigger: CardPurchaseTrigger,
+  triggerEventId: string | null,
+  origin: TriggerOrigin = 'proactive',
+): Promise<{ decisionId: string; offerId: string | null }> {
   const snapshot = await buildSnapshot(ctx, memberId);
-  let result = evaluateBigSpend(snapshot, trigger, null);
+  const opts = { origin, rules: activeRules() };
+  let result = evaluateBigSpend(snapshot, trigger, null, opts);
   if (result.kind === 'needs_quotes') {
     const quotes = await fetchQuotes(ctx, memberId, result.principalPaise, result.tenureMonths);
-    result = evaluateBigSpend(snapshot, trigger, quotes);
+    result = evaluateBigSpend(snapshot, trigger, quotes, opts);
   }
   if (result.kind !== 'decision') throw new Error('engine asked for quotes twice');
-  await persistDecision(ctx, memberId, result.decision, triggerEventId, trigger.transactionRef, snapshot.today);
+  return persistDecision(ctx, memberId, result.decision, triggerEventId, trigger.transactionRef, snapshot.today);
 }
 
-export async function persistDecision(ctx: Ctx, memberId: string, d: DecisionDraft, triggerEventId: string, triggerRef: string, simDate: string): Promise<void> {
+export async function persistDecision(
+  ctx: Ctx,
+  memberId: string,
+  d: DecisionDraft,
+  triggerEventId: string | null,
+  triggerRef: string,
+  simDate: string,
+): Promise<{ decisionId: string; offerId: string | null }> {
+  let offerId: string | null = null;
   const { db, hub } = ctx;
   const decision = await db.engineDecision.create({
     data: {
@@ -45,6 +64,7 @@ export async function persistDecision(ctx: Ctx, memberId: string, d: DecisionDra
       checksJson: JSON.stringify(d.checks),
       stressJson: JSON.stringify(d.stressSignals),
       netBenefitPaise: d.netBenefitPaise,
+      explanation: d.explanation,
       simDate,
     },
   });
@@ -65,16 +85,19 @@ export async function persistDecision(ctx: Ctx, memberId: string, d: DecisionDra
         optionsJson: JSON.stringify(o.options),
         termsJson: JSON.stringify(o.terms),
         triggerJson: JSON.stringify(o.trigger),
+        why: d.explanation,
         triggerRef,
         quoteRefsJson: JSON.stringify(o.quoteRefs),
         simDate,
       },
     });
+    offerId = offer.id;
     const view = toOffer(offer);
     await ctx.audit({ memberId, actor: 'system', action: 'offer.created', target: offer.id, details: { feature: d.feature, status: o.status, netBenefitPaise: o.netBenefitPaise } });
     if (d.promptPermission) {
-      const context = o.trigger ? `Your ${formatInr(o.trigger.amountPaise)} ${o.trigger.merchant} purchase` : o.headline;
-      await ctx.audit({ memberId, actor: 'system', action: 'permission.prompted', target: 'smart_savings', details: { offerId: offer.id, context } });
+      // Same conditional wording as the offer itself: never an unconditional saving claim.
+      const context = o.headline;
+      await ctx.audit({ memberId, actor: 'system', action: 'permission.prompted', target: 'smart_savings', details: { offerId: offer.id, context, simDate } });
       hub.member(memberId, { type: 'permission.prompt', data: { scope: 'smart_savings', context, previewBenefitPaise: o.netBenefitPaise } });
     } else {
       hub.member(memberId, { type: 'offer.created', data: { offer: view } });
@@ -91,5 +114,6 @@ export async function persistDecision(ctx: Ctx, memberId: string, d: DecisionDra
 
   const full = await db.engineDecision.findUniqueOrThrow({ where: { id: decision.id }, include: { offer: { select: { id: true } } } });
   hub.admin({ type: 'decision.recorded', data: { decision: toDecision(full) } });
-  ctx.log.info({ memberId, feature: d.feature, outcome: d.outcome, reasons: d.reasons }, 'engine decision');
+  ctx.log.info({ memberId, feature: d.feature, origin: d.origin, outcome: d.outcome, reasons: d.reasons }, 'engine decision');
+  return { decisionId: decision.id, offerId };
 }

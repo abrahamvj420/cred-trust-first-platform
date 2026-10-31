@@ -74,7 +74,9 @@ export function LiveConsole() {
                 </span>
                 <span className="font-mono text-xs text-muted">{d.reasons.join(', ')}</span>
                 {d.netBenefitPaise ? <span>saves <Money paise={d.netBenefitPaise} /></span> : null}
+                {d.origin === 'member_initiated' ? <span className="text-xs text-accent">member asked</span> : null}
               </div>
+              <p className="text-sm"><span className="text-muted">Member sees: </span>{d.explanation}</p>
               <ol className="grid gap-1 text-xs sm:grid-cols-2">
                 {d.checks.map((c) => (
                   <li key={c.check} className="flex gap-2">

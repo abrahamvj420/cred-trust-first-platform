@@ -41,7 +41,7 @@ export type OfferStatus = z.infer<typeof OfferStatus>;
 export const DecisionOutcome = z.enum(['offer', 'blocked', 'help']);
 export type DecisionOutcome = z.infer<typeof DecisionOutcome>;
 
-export const EngineCheck = z.enum(['signal', 'permission', 'stress', 'offer_cap', 'affordability', 'net_benefit']);
+export const EngineCheck = z.enum(['signal', 'permission', 'stress', 'offer_cap', 'affordability', 'likely_to_carry', 'net_benefit']);
 export type EngineCheck = z.infer<typeof EngineCheck>;
 
 export const ReasonCode = z.enum([
@@ -57,6 +57,7 @@ export const ReasonCode = z.enum([
   'recently_declined',
   'already_offered',
   'awaiting_permission',
+  'can_pay_in_full',
 ]);
 export type ReasonCode = z.infer<typeof ReasonCode>;
 

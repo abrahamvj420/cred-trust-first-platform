@@ -29,8 +29,10 @@ describe('golden path: Aarav buys a ₹1.5L laptop on ShopKart', () => {
     expect(txns[0]).toMatchObject({ merchant: 'ShopKart', amountPaise: LAPTOP });
 
     // 4–5. No Smart Savings yet → one-tap permission card first, live over SSE
-    const prompt = (await stream.waitFor('permission.prompt')) as { data: { scope: string; previewBenefitPaise: number } };
+    const prompt = (await stream.waitFor('permission.prompt')) as { data: { scope: string; context: string; previewBenefitPaise: number } };
     expect(prompt.data.scope).toBe('smart_savings');
+    // Same conditional wording as the offer, never an unconditional claim
+    expect(prompt.data.context).toMatch(/^If you can’t clear ₹1,50,000 by the due date, an EMI saves you ₹27,714/);
     const pending = (await cred(credApi.products.offers, { token })).active!;
     expect(pending.status).toBe('awaiting_permission');
 
@@ -38,6 +40,8 @@ describe('golden path: Aarav buys a ₹1.5L laptop on ShopKart', () => {
     await stream.waitFor('offer.created');
     const offer: Offer = (await cred(credApi.products.offers, { token })).active!;
     expect(offer.status).toBe('shown');
+    expect(offer.headline).toBe(prompt.data.context);
+    expect(offer.why).toMatch(/bigger than your usual spending/);
 
     // Card vs EMI vs loan side by side, saving from the engine's savings function
     expect(offer.options.map((o) => o.key)).toEqual(['pay_in_full', 'card_revolve', 'emi', 'loan']);
@@ -68,7 +72,8 @@ describe('golden path: Aarav buys a ₹1.5L laptop on ShopKart', () => {
     expect(adminTxns.some((t) => t.amountPaise === LAPTOP)).toBe(true);
     const [decision] = await decisionsFor(memberId('aarav'));
     expect(decision).toMatchObject({ feature: 'big_spend_support', outcome: 'offer', reasons: ['awaiting_permission'], offerId: offer.id });
-    expect(decision!.checks.map((c) => c.check)).toEqual(['signal', 'permission', 'stress', 'offer_cap', 'affordability', 'net_benefit']);
+    expect(decision!.checks.map((c) => c.check)).toEqual(['signal', 'permission', 'stress', 'offer_cap', 'affordability', 'likely_to_carry', 'net_benefit']);
+    expect(decision!.explanation).toMatch(/If you can’t clear it by the due date/);
     const perms = (await cred(credApi.admin.permissionLog, { query: { memberId: memberId('aarav') } })).entries.map((e) => e.action);
     expect(perms).toEqual(expect.arrayContaining(['permission.prompted', 'permission.granted']));
     const adminLoans = (await cred(credApi.admin.loans, { query: { memberId: memberId('aarav') } })).loans;
@@ -134,6 +139,85 @@ describe('guardrails', () => {
     await expect(cred(credApi.products.acceptOffer, { token, params: { offerId: offer.id }, body: { option: 'emi', keyFactsAcknowledged: true } })).rejects.toMatchObject({
       status: 409,
     });
+  });
+});
+
+describe('M3 rules end to end', () => {
+  const MONITOR = 38_500_00;
+  const latestTxn = async (token: string) => (await cred(credApi.member.transactions, { token, query: { limit: 1 } })).transactions[0]!;
+
+  it('a full payer’s purchase they can clear triggers no offer (blocked: can pay in full); they can still convert it themselves', async () => {
+    const token = await login('aarav');
+    await buyOnShopKart('aarav', MONITOR, 'Studio 27 4K Monitor');
+    const [decision] = await eventually(async () => {
+      const d = await decisionsFor(memberId('aarav'));
+      return d.length ? d : null;
+    }, 'Aarav decision');
+    expect(decision).toMatchObject({ outcome: 'blocked', reasons: ['can_pay_in_full'], offerId: null });
+    expect(decision!.explanation).toMatch(/you’ll likely pay it in full/);
+    expect((await cred(credApi.products.offers, { token })).active).toBeNull();
+    const perms = (await cred(credApi.admin.permissionLog, { query: { memberId: memberId('aarav') } })).entries.map((e) => e.action);
+    expect(perms).not.toContain('permission.prompted'); // nothing to ask about
+
+    // Member-initiated: "Convert to EMI" on the transaction, no Smart Savings needed
+    const txn = await latestTxn(token);
+    expect(txn).toMatchObject({ amountPaise: MONITOR, convertible: true });
+    const r = await cred(credApi.products.convertToEmi, { token, params: { transactionId: txn.id } });
+    expect(r.decision).toMatchObject({ origin: 'member_initiated', outcome: 'offer' });
+    expect(r.offer).toMatchObject({ status: 'shown', origin: 'member_initiated' });
+    expect(r.offer!.headline).toMatch(/^If you can’t clear ₹38,500 by the due date/);
+    expect(r.offer!.why).toMatch(/You asked to convert/);
+    // The member's own "why" feed explains both decisions
+    const mine = (await cred(credApi.products.decisions, { token })).decisions;
+    expect(mine.map((d) => d.outcome)).toEqual(['offer', 'blocked']);
+  });
+
+  it('withdrawing Smart Savings stops offers immediately, and it is logged', async () => {
+    const token = await login('sneha');
+    await buyOnShopKart('sneha', LAPTOP);
+    const offer = await eventually(async () => (await cred(credApi.products.offers, { token })).active, 'Sneha offer');
+
+    await cred(credApi.member.withdrawPermission, { token, params: { scope: 'smart_savings' } });
+    const after = await cred(credApi.products.offers, { token });
+    expect(after.active).toBeNull();
+    expect(after.history.find((o) => o.id === offer.id)!.status).toBe('expired');
+    const actions = (await cred(credApi.admin.audit, { query: { memberId: memberId('sneha') } })).entries.map((e) => e.action);
+    expect(actions).toEqual(expect.arrayContaining(['permission.withdrawn', 'offer.expired']));
+
+    await buyOnShopKart('sneha', 1_20_000_00, 'Studio Monitor');
+    const decisions = await eventually(async () => {
+      const d = await decisionsFor(memberId('sneha'));
+      return d.length >= 2 ? d : null;
+    }, 'second Sneha decision');
+    expect(decisions[0]).toMatchObject({ outcome: 'blocked', reasons: ['no_permission'] });
+    expect(decisions[0]!.explanation).toMatch(/turned Smart Savings off/);
+  });
+
+  it('"Not now" to Smart Savings is not asked again (90-day rule)', async () => {
+    const token = await login('aarav');
+    await buyOnShopKart('aarav', LAPTOP);
+    const pending = await eventually(async () => (await cred(credApi.products.offers, { token })).active, 'permission card');
+    await cred(credApi.products.declineOffer, { token, params: { offerId: pending.id }, body: { reason: 'Not now (Smart Savings)' } });
+
+    await buyOnShopKart('aarav', 1_00_000_00, 'Aero 14 Laptop (second)');
+    const decisions = await eventually(async () => {
+      const d = await decisionsFor(memberId('aarav'));
+      return d.length >= 2 ? d : null;
+    }, 'second Aarav decision');
+    expect(decisions[0]).toMatchObject({ outcome: 'blocked', reasons: ['no_permission'] });
+    expect(decisions[0]!.explanation).toMatch(/won’t ask again before/);
+    const prompts = (await cred(credApi.admin.permissionLog, { query: { memberId: memberId('aarav') } })).entries.filter((e) => e.action === 'permission.prompted');
+    expect(prompts).toHaveLength(1);
+  });
+
+  it('admin can read every rule setting', async () => {
+    const { rules, editable } = await cred(credApi.admin.rules);
+    expect(editable).toBe(false);
+    const byKey = Object.fromEntries(rules.map((r) => [r.key, r]));
+    expect(byKey.carryRepaymentMultipleBps!.display).toBe('1.5×');
+    expect(byKey.monthlyProactiveOfferCap!.value).toBe(3);
+    expect(byKey.permissionReaskDays!.display).toBe('90 days');
+    expect(byKey.cardInterestMonthlyBps!.display).toBe('3.5%');
   });
 });
 

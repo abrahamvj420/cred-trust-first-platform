@@ -17,6 +17,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <nav className="flex items-center gap-6 border-b border-border px-6 py-3 text-sm">
           <span className="font-semibold">CRED Console</span>
           <a className="text-muted hover:text-text" href="/">Overview</a>
+          <a className="text-muted hover:text-text" href="/rules">Rules</a>
           <a className="text-muted hover:text-text" href="/demo">Demo</a>
         </nav>
         {children}

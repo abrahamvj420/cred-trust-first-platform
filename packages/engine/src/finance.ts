@@ -46,10 +46,10 @@ export interface CardCost {
 }
 
 /** Keeping the balance on the card: 3.5%/month reducing, plus 18% GST on interest. */
-export function cardCost(principalPaise: number, months: number): CardCost {
-  const schedule = amortise(principalPaise, CARD_INTEREST_MONTHLY_BPS / 10_000, months);
+export function cardCost(principalPaise: number, months: number, monthlyBps: number = CARD_INTEREST_MONTHLY_BPS, gstBps: number = GST_BPS): CardCost {
+  const schedule = amortise(principalPaise, monthlyBps / 10_000, months);
   const interestPaise = sumInterest(schedule);
-  const gstOnInterestPaise = bpsOf(interestPaise, GST_BPS);
+  const gstOnInterestPaise = bpsOf(interestPaise, gstBps);
   return { interestPaise, gstOnInterestPaise, totalCostPaise: interestPaise + gstOnInterestPaise, schedule };
 }
 
@@ -64,11 +64,11 @@ export interface EmiCost {
 }
 
 /** Partner EMI: reducing balance at annual rate ÷ 12, 1% fee + 18% GST on the fee. */
-export function emiCost(principalPaise: number, months: number, ratePaBps: number, feeBps: number = PROCESSING_FEE_BPS): EmiCost {
+export function emiCost(principalPaise: number, months: number, ratePaBps: number, feeBps: number = PROCESSING_FEE_BPS, gstBps: number = GST_BPS): EmiCost {
   const schedule = amortise(principalPaise, ratePaBps / 10_000 / 12, months);
   const interestPaise = sumInterest(schedule);
   const processingFeePaise = bpsOf(principalPaise, feeBps);
-  const gstOnFeePaise = bpsOf(processingFeePaise, GST_BPS);
+  const gstOnFeePaise = bpsOf(processingFeePaise, gstBps);
   return {
     ratePaBps,
     emiPaise: schedule[0]!.paymentPaise,

@@ -317,6 +317,8 @@ model EngineDecision {
   checksJson      String
   stressJson      String
   netBenefitPaise Int?
+  /// Plain-English why / why not, shown to the member and in admin
+  explanation     String   @default("")
   /// Simulated calendar date of the decision
   simDate         String   @default("")
   createdAt       DateTime @default(now())
@@ -342,6 +344,8 @@ model Offer {
   optionsJson     String    @default("[]")
   termsJson       String
   triggerJson     String?
+  /// Plain-English "why am I seeing this"
+  why             String    @default("")
   /// The trigger (e.g. card transaction ref) — an offer is never repeated for it
   triggerRef      String?
   /// Partner quote per acceptable option, e.g. {"emi":"q_..","loan":"q_.."}

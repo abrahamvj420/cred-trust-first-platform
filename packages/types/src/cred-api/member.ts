@@ -143,7 +143,7 @@ export const memberEndpoints = {
     auth: 'member',
     summary: 'Recent card transactions',
     query: z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }),
-    response: z.object({ transactions: z.array(CardTransaction) }),
+    response: z.object({ transactions: z.array(CardTransaction.extend({ convertible: z.boolean() })) }),
   }),
   upiPay: endpoint({
     method: 'POST',
