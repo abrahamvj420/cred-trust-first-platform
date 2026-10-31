@@ -47,7 +47,7 @@ export default function OfferPage() {
                   {o.recommended ? <Badge tone="accent">Lowest cost</Badge> : o.key === 'pay_in_full' ? <Badge tone="positive">Cheapest</Badge> : null}
                 </div>
                 <div className="flex items-baseline justify-between">
-                  <span className="text-caption text-muted">Extra you pay</span>
+                  <span className="text-caption text-muted">{o.key === 'sell' ? 'What it costs you' : o.terms?.kind === 'insurance' || (o.key === 'no_change' && offer.terms.kind === 'insurance') ? 'Extra you’d pay a year' : 'Extra you pay'}</span>
                   <Money paise={o.totalCostPaise} size="title" />
                 </div>
                 {o.monthlyPaise ? (
@@ -68,14 +68,14 @@ export default function OfferPage() {
                 {o.note ? <p className="text-caption text-muted">{o.note}</p> : null}
                 {o.acceptable && open ? (
                   <ButtonLink href={`/offers/${offer.id}/key-facts?option=${o.key}`} variant={o.recommended ? 'primary' : 'secondary'} block>
-                    Continue with {o.key === 'emi' ? 'EMI' : 'loan'}
+                    Continue with {o.key === 'emi' ? 'EMI' : o.key === 'loan' ? 'loan' : 'this cover'}
                   </ButtonLink>
                 ) : null}
               </Card>
             ))}
           </div>
           <Card className="flex items-center justify-between">
-            <span className="text-callout">If you’d otherwise carry it, you save</span>
+            <span className="text-callout">You save, {offer.benefitLabel}</span>
             <Money paise={offer.netBenefitPaise} size="headline" className="text-positive" />
           </Card>
         </>

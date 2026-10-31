@@ -18,7 +18,7 @@ export async function setup(): Promise<void> {
   const env = {
     ...process.env,
     DEMO_MODE: 'true',
-    LOG_LEVEL: 'warn',
+    LOG_LEVEL: process.env.E2E_LOG_LEVEL ?? 'warn',
     CRED_DATABASE_URL: `file:${dir}/cred.db`,
     ECOSYSTEM_DATABASE_URL: `file:${dir}/ecosystem.db`,
     CRED_API_URL: E2E.credApi,

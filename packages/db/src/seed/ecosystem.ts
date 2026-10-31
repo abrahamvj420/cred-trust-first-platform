@@ -144,6 +144,33 @@ export async function seedEcosystem(db: EcosystemDb, worlds: PersonaWorld[]): Pr
         },
       });
     }
+    // Account Aggregator consents CRED already holds (same handles and ids on both sides)
+    const consents = [
+      ...(f.cred.portfolioLinked
+        ? [{ key: 'portfolio', purpose: 'portfolio_tracking', fiTypes: ['MUTUAL_FUNDS', 'TERM_DEPOSIT'], refs: ['fip:amc_meridian', ...(f.fixedDeposits ?? []).map((_, i) => `fd_${f.key}_${i}`)], months: 12, on: '2025-06-18' }]
+        : []),
+      ...(f.cred.insuranceLinked ? [{ key: 'insurance', purpose: 'protection_review', fiTypes: ['INSURANCE_POLICIES'], refs: ['fip:ins_sahaj'], months: 1, on: '2025-11-12' }] : []),
+    ];
+    for (const c of consents) {
+      await db.aaConsentRequest.create({
+        data: {
+          consentHandle: `aah_${f.key}_${c.key}`,
+          consentId: `aac_${f.key}_${c.key}`,
+          fiu: 'CRED',
+          personId: w.ids.person,
+          purpose: c.purpose,
+          fiTypesJson: JSON.stringify(c.fiTypes),
+          dataRangeMonths: c.months,
+          accountRefsJson: JSON.stringify(c.refs),
+          status: 'ACTIVE',
+          clientRef: `aah_${f.key}_${c.key}`,
+          redirectUrl: 'http://localhost:3000/',
+          createdAt: at(c.on),
+          decidedAt: at(c.on),
+        },
+      });
+    }
+
     if (f.wearable) {
       const shared = f.cred.permissions.some((x) => x.scope === 'health_data');
       await db.wearableLink.create({

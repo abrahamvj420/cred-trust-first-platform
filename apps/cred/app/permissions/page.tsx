@@ -10,9 +10,10 @@ import { Screen } from '../_shell/Screen';
 
 const ABOUT: Record<PermissionScope, { title: string; body: string }> = {
   smart_savings: { title: 'Smart Savings', body: 'CRED looks at your card bills and suggests savings, only when you gain in rupees, one at a time.' },
-  income_data: { title: 'Income (via Account Aggregator)', body: 'Your salary credits, used to offer better limits and rates.' },
-  health_data: { title: 'Activity summary', body: 'A weekly activity score from your health app, used for insurance wellness rewards.' },
-  portfolio_data: { title: 'Investments (via Account Aggregator)', body: 'Your funds and deposits, for tracking and sell-vs-borrow comparisons.' },
+  income_data: { title: 'Salary (via Account Aggregator)', body: 'Your monthly salary, verified once from your bank, used for better limits and rates. Turning this off deletes it.' },
+  health_data: { title: 'Activity summary', body: 'One weekly activity score from your health app, used for insurance wellness rewards. Turning this off stops sharing and deletes the summaries.' },
+  portfolio_data: { title: 'Investments (via Account Aggregator)', body: 'Your funds and deposits, for tracking, goals and sell-vs-borrow comparisons. Turning this off deletes the linked holdings.' },
+  insurance_data: { title: 'Insurance policies (via Account Aggregator)', body: 'Your policies, including employer cover, used to check for gaps in your cover. Turning this off deletes them.' },
 };
 
 /** One-tap withdraw. The full privacy centre arrives in M6. */

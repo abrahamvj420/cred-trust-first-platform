@@ -32,6 +32,14 @@ export function Home() {
               <h1 className="truncate text-title">{firstName(home.data.member.name)}</h1>
             </div>
             <div className="flex items-center gap-2">
+              <a href="/alerts" aria-label={home.data.unreadAlerts ? `${home.data.unreadAlerts} new alerts` : 'Alerts'} className="relative grid h-11 w-11 place-items-center rounded-full border border-border bg-surface shadow-e1 transition-calm hover:border-muted">
+                <Icon name="bell" size={20} />
+                {home.data.unreadAlerts ? (
+                  <span aria-hidden className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-caption font-semibold text-accent-text">
+                    {home.data.unreadAlerts}
+                  </span>
+                ) : null}
+              </a>
               <a
                 href="/rewards"
                 aria-label={`${home.data.rewardsCoins.toLocaleString('en-IN')} reward coins`}
@@ -58,6 +66,27 @@ export function Home() {
           {offers.data?.active?.status === 'awaiting_permission' ? <SmartSavingsCard offer={offers.data.active} onDone={reload} /> : null}
           {offers.data?.active?.status === 'shown' ? <OfferCard offer={offers.data.active} onDone={reload} /> : null}
           {offers.data?.help.map((h) => <HelpCard key={h.id} help={h} />)}
+
+          <section className="flex flex-col gap-3" aria-label="Your money">
+            <SectionHeader title="Your money" />
+            <div className="grid grid-cols-3 gap-3">
+              {(
+                [
+                  ['/credit', 'trend', 'Credit', 'Borrow better'],
+                  ['/protect', 'shield', 'Protect', 'Cover & claims'],
+                  ['/wealth', 'chart', 'Grow', 'Invest & goals'],
+                ] as const
+              ).map(([href, icon, title, sub]) => (
+                <a key={href} href={href} className="flex min-h-28 flex-col justify-between rounded-lg border border-border bg-surface p-4 shadow-e1 transition-calm hover:border-muted active:scale-[0.99]">
+                  <Icon name={icon} size={22} className="text-accent" />
+                  <span>
+                    <span className="block text-headline">{title}</span>
+                    <span className="block text-caption text-muted">{sub}</span>
+                  </span>
+                </a>
+              ))}
+            </div>
+          </section>
 
           <section className="flex flex-col gap-3" aria-label="Your cards">
             <SectionHeader title="Your cards" action={<a href="/cards" className="flex min-h-11 items-center text-callout text-accent">See all</a>} />

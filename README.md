@@ -82,6 +82,21 @@ Every app and service answers `GET /status`. Once the control room shows all six
 pnpm test              # unit tests + boundary checks
 pnpm test:e2e          # golden-path tests; starts its own APIs on 4900/4910 with throwaway data
 pnpm typecheck
+pnpm screenshots m5    # with pnpm dev up: sweeps every screen for all personas, runs axe, saves screenshots
+```
+
+### Simulating the world (DEMO_MODE only)
+
+The control room drives these from M6; until then, call them directly:
+
+```bash
+# Advance the clock a month: salaries, card spend, each persona's bill habit, statements,
+# EMIs, activity summaries, renewals, claims and fund prices, then due dates and the credit ladder
+curl -X POST localhost:4100/sim/v1/clock/advance -H 'content-type: application/json' -d '{"months":1}'
+
+# Fire a real-world event for a persona: big_purchase, insurer_renewal, wearable_sync,
+# market_fall, new_vehicle, claim_update
+curl -X POST localhost:4100/sim/v1/scenarios -H 'content-type: application/json' -d '{"scenario":"insurer_renewal","personaKey":"priya"}'
 ```
 
 ### Troubleshooting
@@ -97,7 +112,7 @@ pnpm typecheck
 | Aarav Mehta | Pays in full, about to buy a ₹1.5L laptop, no Smart Savings yet | Golden path, 1, 2, 3, 5, 7 |
 | Priya Nair | Family of five, employer cover plus a floater, parents uncovered, renewal due | 4, 6 |
 | Sneha Kapoor | ₹25L across FDs, funds and gold; saving for a house | 2, 7 |
-| Kabir Singh | Newer member, one partial bill after his wedding | 3, 5, 8 |
+| Kabir Singh | Newer member; this month's bill includes a flight he can't clear at once | 3, 5, 8 |
 | Rohan Das | Minimum-only payments; the laptop would take him to ~96% of his limit: gets help, not credit | Stress case |
 
 ## Demo flow

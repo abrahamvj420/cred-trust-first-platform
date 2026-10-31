@@ -2,7 +2,12 @@ import { createEcosystemDb } from '@cred/db/ecosystem';
 import { resetEcosystem } from '@cred/db/seed';
 import { createService, handlers, HttpError, isDemoMode, loadRootEnv, requireEnv } from '@cred/service-kit';
 import { ecosystemApi } from '@cred/types';
+import { aaHandlers } from './aa';
+import { fundhouseHandlers } from './fundhouse';
+import { insurerHandlers } from './insurer';
 import { lenderHandlers } from './lender';
+import { simHandlers } from './sim';
+import { wearableHandlers } from './wearable';
 import { createOutbox } from './outbox';
 import { billPayHandlers, ecosystemPagesUrl, railsHandlers } from './rails';
 import { upiHandlers } from './upi';
@@ -55,6 +60,11 @@ railsHandlers(ctx, h);
 billPayHandlers(ctx, h);
 upiHandlers(ctx, h);
 lenderHandlers(ctx, h);
+aaHandlers(ctx, h);
+insurerHandlers(ctx, h);
+fundhouseHandlers(ctx, h);
+wearableHandlers(ctx, h);
+simHandlers(ctx, h);
 
 svc.implement(ecosystemApi, h.map);
 

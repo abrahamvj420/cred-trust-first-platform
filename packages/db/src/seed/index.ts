@@ -10,6 +10,7 @@ export { buildPersonaWorld, type PersonaWorld } from './world';
 export { summariseActivityWeek } from './wearable';
 export { DEMO_UPI_PIN } from './ecosystem';
 export * as catalog from './catalog';
+export { prng, addDays as addDaysYmd, addMonths as addMonthsYmd, at as atIst } from './util';
 
 export const buildWorlds = () => PERSONA_FIXTURES.map(buildPersonaWorld);
 

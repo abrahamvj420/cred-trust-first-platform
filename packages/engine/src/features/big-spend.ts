@@ -40,7 +40,8 @@ export function assessCarry(s: MemberSnapshot, rules: RuleValues = DEFAULT_RULES
   return { projectedBillPaise, typicalRepaymentPaise, surplusPaise, capacityPaise, likelyToCarry: projectedBillPaise > capacityPaise };
 }
 
-function loanTerms(q: QuoteInput, rules: RuleValues): LoanTerms {
+/** A partner quote, re-costed with the savings method. */
+export function loanTerms(q: QuoteInput, rules: RuleValues = DEFAULT_RULES): LoanTerms {
   const c = emiCost(q.principalPaise, q.tenureMonths, q.ratePaBps, q.feeBps, rules.gstBps);
   return {
     kind: 'loan',
@@ -53,6 +54,7 @@ function loanTerms(q: QuoteInput, rules: RuleValues): LoanTerms {
     processingFeePaise: c.processingFeePaise,
     gstOnFeePaise: c.gstOnFeePaise,
     totalInterestPaise: c.interestPaise,
+    ...(q.rateStepDown?.length ? { rateStepDown: q.rateStepDown } : {}),
   };
 }
 
@@ -210,7 +212,7 @@ export function evaluateBigSpend(s: MemberSnapshot, trigger: CardPurchaseTrigger
   }
   d.pass('net_benefit', `Saves ${formatInr(net)} vs paying it off on the card over ${months} months.`);
 
-  const terms = best.terms!;
+  const terms = best.terms as LoanTerms;
   const product = best.key === 'emi' ? 'an EMI' : 'a personal loan';
   const saving = formatInr(net);
   const why =
@@ -224,6 +226,7 @@ export function evaluateBigSpend(s: MemberSnapshot, trigger: CardPurchaseTrigger
     net,
     {
       headline: `If you can’t clear ${amt} by the due date, ${product} saves you ${saving} compared with carrying it`,
+      benefitLabel: 'less than card interest',
       subline: `${months} months at ${formatBps(terms.ratePaBps)}: ${formatInr(terms.emiPaise)} a month. Paying the full bill is still cheapest.`,
       comparison: {
         current: { label: card.label, totalCostPaise: card.totalCostPaise, lines: card.lines },

@@ -7,10 +7,21 @@ import { longDate, shortDate } from '@/lib/format';
 import { useApi } from '@/lib/live';
 import { Screen } from '../../_shell/Screen';
 
+const KIND: Record<string, string> = {
+  purchase_emi: 'EMI on a card purchase',
+  personal_loan: 'Personal loan',
+  loan_against_funds: 'Loan against your holdings',
+  balance_switch_emi: 'Card balance moved to an EMI',
+};
+
 export default function LoanPage() {
   const { id } = useParams<{ id: string }>();
   const q = useApi(credApi.products.loan, { params: { loanId: id } });
   const l = q.data?.loan;
+  const offer = useApi(credApi.products.offer, { params: { offerId: l?.offerId ?? '' } }, { enabled: !!l?.offerId, live: false });
+  const terms = offer.data?.offer.options.find((o) => o.acceptable && o.terms?.kind === 'loan' && o.terms.lenderName === l?.lenderName)?.terms;
+  const steps = terms?.kind === 'loan' ? (terms.rateStepDown ?? []) : [];
+  const paid = l?.schedule.filter((i) => i.status === 'paid').length ?? 0;
   const next = l?.schedule.find((i) => i.status !== 'paid');
   return (
     <Screen title="EMI schedule" back="/loans">
@@ -22,7 +33,9 @@ export default function LoanPage() {
         <>
           <Card elevation={2} className="flex flex-col gap-3">
             <div className="flex items-start justify-between">
-              <p className="text-callout text-muted">{l.lenderName}</p>
+              <p className="text-callout text-muted">
+                {l.lenderName} · {KIND[l.kind]}
+              </p>
               <Badge tone={l.status === 'disbursed' ? 'positive' : 'neutral'}>{l.status === 'disbursed' ? 'Active' : l.status}</Badge>
             </div>
             <div>
@@ -45,8 +58,21 @@ export default function LoanPage() {
               </div>
             </dl>
           </Card>
+          {steps.length ? (
+            <Card className="flex flex-col gap-2">
+              <p className="text-headline">Your rate steps down when you pay on time</p>
+              {steps.map((st) => (
+                <p key={st.afterOnTimePayments} className="flex items-center justify-between text-callout">
+                  <span className="text-muted">After {st.afterOnTimePayments} on-time EMIs</span>
+                  <span className={`tabular ${paid >= st.afterOnTimePayments ? 'text-positive' : ''}`}>
+                    {formatBps(st.ratePaBps)} {paid >= st.afterOnTimePayments ? '· reached' : ''}
+                  </span>
+                </p>
+              ))}
+            </Card>
+          ) : null}
           <section className="flex flex-col gap-3">
-            <SectionHeader title="Instalments" />
+            <SectionHeader title={`Instalments · ${paid} of ${l.tenureMonths} paid`} />
             {l.schedule.length === 0 ? (
               <EmptyState icon="list" title="Schedule on its way" body={`It appears once ${l.lenderName} disburses.`} />
             ) : (
@@ -66,7 +92,7 @@ export default function LoanPage() {
                       <tr key={i.n} className={i === next ? 'bg-raised' : ''}>
                         <td className="px-4 py-3">
                           {shortDate(i.dueDate)}
-                          {i === next ? <span className="block text-caption text-accent">Next</span> : null}
+                          {i === next ? <span className="block text-caption text-accent">Next</span> : i.status === 'paid' ? <span className="block text-caption text-positive">Paid</span> : null}
                         </td>
                         <td className="py-3 text-right"><Money paise={i.principalPaise} /></td>
                         <td className="py-3 text-right text-muted"><Money paise={i.interestPaise} /></td>

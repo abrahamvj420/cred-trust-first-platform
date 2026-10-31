@@ -37,7 +37,8 @@ const priya: PersonaFixture = {
   behaviour: { billPayHabit: 'full', avgDailySteps: 8_200 },
   policies: [
     { productId: 'prd_group', coverPaise: rupees(3_00_000), annualPremiumPaise: 0, isEmployer: true, employerName: 'Coastline Logistics Ltd', members: ['self', 'spouse', 'child'], renewalDate: '2027-01-01' },
-    { productId: 'prd_floater', coverPaise: rupees(5_00_000), annualPremiumPaise: rupees(18_600), isEmployer: false, members: ['self', 'spouse', 'child'], renewalDate: '2026-11-25', viaCred: true },
+    // ₹5L floater for three, eldest 41: ₹3,100 per lakh × 5 × 1.6 = ₹24,800
+    { productId: 'prd_floater', coverPaise: rupees(5_00_000), annualPremiumPaise: rupees(24_800), isEmployer: false, members: ['self', 'spouse', 'child'], renewalDate: '2026-11-25', viaCred: true },
   ],
   family: [
     { name: 'Arjun Nair', relation: 'spouse', age: 41, knownToCred: true },
@@ -48,9 +49,12 @@ const priya: PersonaFixture = {
   wearable: { provider: 'health_connect' },
   cred: {
     memberSince: '2023-01-22',
+    // Policies (including employer cover) read through Account Aggregator for the protection check
+    insuranceLinked: true,
     permissions: [
       { scope: 'smart_savings', context: 'Health cover renewal reminder', grantedOn: '2025-11-10' },
       { scope: 'health_data', context: 'Wellness rewards on family floater', grantedOn: '2025-11-12' },
+      { scope: 'insurance_data', context: 'Cover check via Account Aggregator', grantedOn: '2025-11-12' },
     ],
     rewardsCoins: 21_900,
   },
@@ -90,7 +94,11 @@ const sneha: PersonaFixture = {
   },
 };
 
-/** Newer member; one partial bill after his wedding, otherwise healthy. Features 3, 5, 8. */
+/**
+ * Newer member; one part-paid bill after his wedding four months ago, in full since.
+ * This month's bill includes a ₹36,000 flight, more than he can clear at once:
+ * a part payment now brings the Card-Balance Switch (8). Features 3, 5, 8.
+ */
 const kabir: PersonaFixture = {
   key: 'kabir',
   dob: '1997-05-09',
@@ -105,9 +113,9 @@ const kabir: PersonaFixture = {
     billingDay: 15,
     dueDay: 5,
     monthlySpendPaise: rupees(28_000),
-    history: ['full', 'full', 'full', 'full', { pct: 60 }, 'full'],
+    history: ['full', 'full', 'full', { pct: 60 }, 'full', 'full'],
     oneOffs: [
-      { cycle: 4, merchant: 'Royal Banquets', category: 'other', amountPaise: rupees(42_000) },
+      { cycle: 3, merchant: 'Royal Banquets', category: 'other', amountPaise: rupees(42_000) },
       { cycle: 6, merchant: 'SkyHop Airlines', category: 'travel', amountPaise: rupees(36_000) },
     ],
   },

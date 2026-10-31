@@ -61,6 +61,7 @@ export function SmartSavingsCard({ offer, onDone }: { offer: Offer; onDone: () =
 }
 
 export function OfferCard({ offer, onDone }: { offer: Offer; onDone: () => void }) {
+  const label = offer.origin === 'proactive' ? 'Smart Savings' : 'You asked us to compare';
   const [busy, setBusy] = useState(false);
   async function decline() {
     setBusy(true);
@@ -70,11 +71,11 @@ export function OfferCard({ offer, onDone }: { offer: Offer; onDone: () => void 
   return (
     <Card elevation={2} className="flex animate-enter flex-col gap-4 border-accent/40">
       <p className="flex items-center gap-2 text-overline uppercase text-accent">
-        <Icon name="spark" size={16} /> Smart Savings
+        <Icon name="spark" size={16} /> {label}
       </p>
       <div className="flex items-baseline gap-2">
         <Money paise={offer.netBenefitPaise} size="title" className="text-positive" />
-        <span className="text-callout text-muted">less than card interest</span>
+        <span className="text-callout text-muted">{offer.benefitLabel}</span>
       </div>
       <h2 className="text-headline">{offer.headline}</h2>
       <p className="text-callout text-muted">{offer.subline}</p>

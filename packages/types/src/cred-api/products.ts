@@ -1,17 +1,20 @@
 import { z } from 'zod';
-import { Id, IsoDate, IsoDateTime, Ok, PositivePaise } from '../common';
+import { Id, IsoDate, IsoDateTime, NonNegativePaise, Ok, PositivePaise } from '../common';
 import { endpoint } from '../contract';
 import {
+  AcceptOption,
   Claim,
   FamilyMember,
+  FloaterComparison,
   Goal,
-  HealthQuote,
   HelpPlan,
   Holding,
   InsurancePolicy,
   KeyFactStatement,
   Loan,
+  MemberAlert,
   Offer,
+  PortfolioSummary,
   ProtectionGap,
   SellVsBorrow,
   WellnessStatus,
@@ -32,29 +35,34 @@ export const MemberDecision = z.object({
 });
 export type MemberDecision = z.infer<typeof MemberDecision>;
 
-export const AcceptOption = z.enum(['emi', 'loan']);
-
 export const OfferAcceptRequest = z.object({
   option: AcceptOption,
   /** Member has seen the key-fact screen. Must be set by an explicit tap. */
   keyFactsAcknowledged: z.literal(true),
 });
 
-/** After accept, the lender sends an e-sign OTP; the member confirms with it. */
+/** After accept, the lender (e-sign) or insurer (proposal) sends an OTP; the member confirms with it. */
 export const OfferAcceptResponse = z.object({
   offer: Offer,
   loan: Loan.nullable(),
-  otp: z.object({ sentTo: z.string(), demoOtp: z.string() }),
+  policy: InsurancePolicy.nullable(),
+  otp: z.object({ sentTo: z.string(), demoOtp: z.string(), purpose: z.string() }),
 });
 
 export const GoalInput = z.object({
-  name: z.string().min(1).max(60),
+  name: z.string().trim().min(1).max(60),
   targetPaise: PositivePaise,
   targetDate: IsoDate,
+  currentPaise: NonNegativePaise.default(0),
 });
 
+/** Partial update: only the fields sent change (no defaults applied). */
+export const GoalPatch = z
+  .object({ name: z.string().trim().min(1).max(60), targetPaise: PositivePaise, targetDate: IsoDate, currentPaise: NonNegativePaise })
+  .partial();
+
 export const FamilyMemberInput = z.object({
-  name: z.string().min(1).max(60),
+  name: z.string().trim().min(1).max(60),
   relation: Relation,
   age: z.number().int().min(0).max(110),
 });
@@ -62,7 +70,13 @@ export const FamilyMemberInput = z.object({
 export const ClaimInput = z.object({
   policyId: Id,
   amountPaise: PositivePaise,
-  description: z.string().min(3).max(280),
+  description: z.string().trim().min(3).max(280),
+});
+
+export const GoldInput = z.object({
+  grams: z.number().positive().max(10_000),
+  costPaise: PositivePaise,
+  acquiredOn: IsoDate,
 });
 
 export const productEndpoints = {
@@ -107,7 +121,7 @@ export const productEndpoints = {
     summary: 'Confirm with the lender’s e-sign OTP; the loan arrives by webhook',
     params: OfferParams,
     body: z.object({ otp: z.string().regex(/^\d{6}$/) }),
-    response: z.object({ offer: Offer, loan: Loan }),
+    response: z.object({ offer: Offer, loan: Loan.nullable(), policy: InsurancePolicy.nullable() }),
   }),
   declineOffer: endpoint({
     method: 'POST',
@@ -155,22 +169,54 @@ export const productEndpoints = {
     method: 'GET',
     path: '/v1/wealth/holdings',
     auth: 'member',
-    summary: 'Holdings linked via Account Aggregator',
-    response: z.object({ linked: z.boolean(), holdings: z.array(Holding), totalValuePaise: z.number().int() }),
+    summary: 'Portfolio linked via Account Aggregator, plus self-declared gold; fees disclosed',
+    response: PortfolioSummary,
+  }),
+  holding: endpoint({
+    method: 'GET',
+    path: '/v1/wealth/holdings/:holdingId',
+    auth: 'member',
+    summary: 'One holding',
+    params: z.object({ holdingId: Id }),
+    response: z.object({ holding: Holding }),
+  }),
+  addGold: endpoint({
+    method: 'POST',
+    path: '/v1/wealth/gold',
+    auth: 'member',
+    summary: 'Declare gold you own (Account Aggregator does not carry gold)',
+    body: GoldInput,
+    response: z.object({ holding: Holding }),
+  }),
+  removeHolding: endpoint({
+    method: 'DELETE',
+    path: '/v1/wealth/holdings/:holdingId',
+    auth: 'member',
+    summary: 'Remove a self-declared holding',
+    params: z.object({ holdingId: Id }),
+    response: Ok,
   }),
   sellIntent: endpoint({
     method: 'POST',
     path: '/v1/wealth/sell-intents',
     auth: 'member',
-    summary: 'Member starts selling: returns sell vs borrow (member-initiated)',
+    summary: 'Member starts selling: returns sell vs borrow (member-initiated, through the engine)',
     body: z.object({ holdingId: Id, amountNeededPaise: PositivePaise, months: z.number().int().min(1).max(36) }),
+    response: SellVsBorrow,
+  }),
+  sellIntentDetail: endpoint({
+    method: 'GET',
+    path: '/v1/wealth/sell-intents/:intentId',
+    auth: 'member',
+    summary: 'A sell-vs-borrow comparison already made',
+    params: z.object({ intentId: Id }),
     response: SellVsBorrow,
   }),
   confirmSell: endpoint({
     method: 'POST',
     path: '/v1/wealth/sell-intents/:intentId/sell',
     auth: 'member',
-    summary: 'Go ahead and sell (always allowed)',
+    summary: 'Go ahead and sell (always allowed); the fund house confirms by webhook',
     params: z.object({ intentId: Id }),
     response: z.object({ redemptionId: Id, status: z.enum(['requested', 'completed']) }),
   }),
@@ -195,7 +241,7 @@ export const productEndpoints = {
     auth: 'member',
     summary: 'Update a goal',
     params: z.object({ goalId: Id }),
-    body: GoalInput.partial(),
+    body: GoalPatch,
     response: z.object({ goal: Goal }),
   }),
   deleteGoal: endpoint({
@@ -242,16 +288,23 @@ export const productEndpoints = {
     method: 'GET',
     path: '/v1/insurance/protection-gap',
     auth: 'member',
-    summary: 'Cover needed vs held; cheapest way to close the gap',
+    summary: 'Latest gap check: cover needed vs held, including employer cover',
+    response: ProtectionGap,
+  }),
+  checkProtectionGap: endpoint({
+    method: 'POST',
+    path: '/v1/insurance/protection-gap',
+    auth: 'member',
+    summary: 'Member asks for a gap check now (member-initiated, through the engine)',
     response: ProtectionGap,
   }),
   healthQuote: endpoint({
     method: 'POST',
     path: '/v1/insurance/quotes',
     auth: 'member',
-    summary: 'Family floater quote',
+    summary: 'Family floater comparison from the insurer, waiting periods stated (member-initiated)',
     body: z.object({ coverPaise: PositivePaise, familyMemberIds: z.array(Id).min(1) }),
-    response: HealthQuote,
+    response: FloaterComparison,
   }),
   claims: endpoint({
     method: 'GET',
@@ -260,11 +313,19 @@ export const productEndpoints = {
     summary: 'Claims concierge: tracked claims',
     response: z.object({ claims: z.array(Claim) }),
   }),
+  claim: endpoint({
+    method: 'GET',
+    path: '/v1/insurance/claims/:claimId',
+    auth: 'member',
+    summary: 'One claim with its timeline',
+    params: z.object({ claimId: Id }),
+    response: z.object({ claim: Claim }),
+  }),
   fileClaim: endpoint({
     method: 'POST',
     path: '/v1/insurance/claims',
     auth: 'member',
-    summary: 'File a claim through the concierge',
+    summary: 'File a claim through the concierge; the insurer sends updates by webhook',
     body: ClaimInput,
     response: z.object({ claim: Claim }),
   }),
@@ -279,8 +340,25 @@ export const productEndpoints = {
     method: 'POST',
     path: '/v1/wellness/link',
     auth: 'member',
-    summary: 'Link a wearable (requires health_data permission)',
+    summary: 'Link a health app (requires health_data permission); only weekly summaries are shared',
     body: z.object({ provider: WearableProvider }),
     response: WellnessStatus,
+  }),
+
+  // ── Alerts (information, never offers) ──
+  alerts: endpoint({
+    method: 'GET',
+    path: '/v1/alerts',
+    auth: 'member',
+    summary: 'Alerts for the member: market moves, claim updates, tier changes',
+    response: z.object({ alerts: z.array(MemberAlert) }),
+  }),
+  readAlert: endpoint({
+    method: 'POST',
+    path: '/v1/alerts/:alertId/read',
+    auth: 'member',
+    summary: 'Mark an alert as read',
+    params: z.object({ alertId: Id }),
+    response: Ok,
   }),
 } as const;

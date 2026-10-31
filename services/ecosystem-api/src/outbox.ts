@@ -28,7 +28,9 @@ export function createOutbox(db: EcosystemDb, log: Logger) {
       body: payload,
       signal: AbortSignal.timeout(5000),
     });
-    if (!res.ok) throw new Error(`cred-api answered ${res.status}: ${await res.text()}`);
+    // Always read the body: an unread response holds its connection and stalls later requests
+    const text = await res.text();
+    if (!res.ok) throw new Error(`cred-api answered ${res.status}: ${text}`);
   }
 
   async function flush(): Promise<void> {

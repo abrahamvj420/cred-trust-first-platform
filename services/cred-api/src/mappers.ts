@@ -1,5 +1,12 @@
-import type { AuditLog, CardTransaction as TxnRow, EngineDecision as DecisionRow, HelpPlan as HelpRow, Loan as LoanRow, EmiInstallment as InstRow, Offer as OfferRow, Permission as PermRow, Card as CardRow, Statement as StatementRow, BillPayment as PayRow, UpiTransaction as UpiRow, RewardEntry as RewardRow } from '@cred/db/cred';
+import { annualFeePaise, goalPlan } from '@cred/engine';
+import type { AaConsent as ConsentRow, Claim as ClaimRow, Goal as GoalRow, Holding as HoldingRow, InsurancePolicy as PolicyRow, MemberAlert as AlertRow, AuditLog, CardTransaction as TxnRow, EngineDecision as DecisionRow, HelpPlan as HelpRow, Loan as LoanRow, EmiInstallment as InstRow, Offer as OfferRow, Permission as PermRow, Card as CardRow, Statement as StatementRow, BillPayment as PayRow, UpiTransaction as UpiRow, RewardEntry as RewardRow } from '@cred/db/cred';
 import {
+  AaConsent,
+  Claim,
+  Goal,
+  Holding,
+  InsurancePolicy,
+  MemberAlert,
   AuditEntry,
   Card,
   CardTransaction,
@@ -84,6 +91,7 @@ export const toOffer = (o: OfferRow): Offer =>
     headline: o.headline,
     subline: o.subline,
     netBenefitPaise: o.netBenefitPaise,
+    benefitLabel: o.benefitLabel || 'less than card interest',
     comparison: json(o.comparisonJson),
     options: json(o.optionsJson),
     terms: json(o.termsJson),
@@ -129,3 +137,85 @@ export const toLoan = (l: LoanRow & { installments: InstRow[] }): Loan =>
       .sort((a, b) => a.n - b.n)
       .map((i) => ({ n: i.n, dueDate: i.dueDate, amountPaise: i.amountPaise, principalPaise: i.principalPaise, interestPaise: i.interestPaise, status: i.status })),
   });
+
+export const toHolding = (h: HoldingRow): Holding =>
+  Holding.parse({
+    id: h.id,
+    kind: h.kind,
+    assetClass: h.assetClass,
+    name: h.name,
+    provider: h.provider,
+    source: h.source,
+    units: h.units,
+    valuePaise: h.valuePaise,
+    costPaise: h.costPaise,
+    acquiredAt: h.acquiredAt,
+    expenseRatioBps: h.expenseRatioBps,
+    annualFeePaise: annualFeePaise(h.valuePaise, h.expenseRatioBps),
+    expectedReturnBps: h.expectedReturnBps,
+    pledged: h.pledgedUnits > 0,
+  });
+
+export const toPolicy = (p: PolicyRow): InsurancePolicy =>
+  InsurancePolicy.parse({
+    id: p.id,
+    insurerName: p.insurerName,
+    productName: p.productName,
+    kind: p.kind,
+    coverPaise: p.coverPaise,
+    deductiblePaise: p.deductiblePaise,
+    annualPremiumPaise: p.annualPremiumPaise,
+    isEmployer: p.isEmployer,
+    employerName: p.employerName,
+    membersCovered: json(p.membersCoveredJson),
+    renewalDate: p.renewalDate,
+    source: p.source,
+    vehicle: json(p.vehicleJson),
+  });
+
+const NEXT_STEP: Record<string, string> = {
+  filed: 'The insurer has your claim. A claims officer usually picks it up within a day or two.',
+  documents_pending: 'The insurer needs a document from you. We’ll tell you exactly which one.',
+  under_review: 'A claims officer is reviewing it. You don’t need to do anything right now.',
+  approved: 'Approved. The money is on its way to your bank account.',
+  settled: 'Paid. Nothing more to do.',
+  rejected: 'Not approved. The insurer’s note explains why; you can ask for a review.',
+};
+
+export const toClaim = (c: ClaimRow & { policy: PolicyRow }): Claim =>
+  Claim.parse({
+    id: c.id,
+    policyId: c.policyId,
+    policyName: c.policy.productName,
+    insurerName: c.policy.insurerName,
+    amountPaise: c.amountPaise,
+    description: c.description,
+    status: c.status,
+    timeline: json(c.timelineJson),
+    nextStep: NEXT_STEP[c.status] ?? '',
+    createdAt: iso(c.createdAt),
+  });
+
+export const toAlert = (a: AlertRow): MemberAlert =>
+  MemberAlert.parse({ id: a.id, kind: a.kind, title: a.title, body: a.body, href: a.href, read: !!a.readAt, createdAt: iso(a.createdAt) });
+
+export const toConsent = (c: ConsentRow): AaConsent =>
+  AaConsent.parse({ id: c.id, purpose: c.purpose, fiTypes: json(c.fiTypesJson), status: c.status, createdAt: iso(c.createdAt), expiresAt: c.expiresAt && iso(c.expiresAt) });
+
+export const toGoal = (g: GoalRow, today: string, feeRateBps: number): Goal => {
+  const plan = goalPlan(g, today, feeRateBps);
+  return Goal.parse({
+    id: g.id,
+    name: g.name,
+    targetPaise: g.targetPaise,
+    targetDate: g.targetDate,
+    currentPaise: g.currentPaise,
+    monthsLeft: plan.monthsLeft,
+    projectedPaise: plan.projectedPaise,
+    monthlyPlanPaise: plan.monthlyPlanPaise,
+    assumedReturnBps: g.assumedReturnBps,
+    annualFeesPaise: plan.annualFeesPaise,
+    feeRateBps,
+    onTrack: plan.onTrack,
+  });
+};

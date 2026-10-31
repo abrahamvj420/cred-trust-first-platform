@@ -53,6 +53,8 @@ export interface PersonaFixture {
     permissions: { scope: PermissionScope; context: string; grantedOn: string }[];
     /** An ACTIVE AA portfolio consent exists and holdings were pulled. */
     portfolioLinked?: boolean;
+    /** An ACTIVE AA insurance consent exists and policies (incl. employer cover) were pulled. */
+    insuranceLinked?: boolean;
     goals?: { name: string; targetPaise: number; targetDate: string; assumedReturnBps: number }[];
     rewardsCoins: number;
   };

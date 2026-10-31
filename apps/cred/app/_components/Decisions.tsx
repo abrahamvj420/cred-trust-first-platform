@@ -9,6 +9,7 @@ const LABEL: Record<MemberDecision['outcome'], { text: string; tone: 'accent' | 
   offer: { text: 'Suggested', tone: 'accent' },
   blocked: { text: 'Nothing suggested', tone: 'neutral' },
   help: { text: 'Support offered', tone: 'warning' },
+  available: { text: 'Now available', tone: 'accent' },
 };
 
 /** Transparency: every decision CRED made about you, offer or not, and why. */

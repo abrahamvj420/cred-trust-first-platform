@@ -1,9 +1,11 @@
-import { LADDER_TIERS, loanKeyFacts } from '@cred/engine';
+import { insuranceKeyFacts, loanKeyFacts } from '@cred/engine';
 import { activeRules, runBigSpend } from './engine-runner';
 import { conflict, forbidden, handlers, HttpError, notFound } from '@cred/service-kit';
-import { credApi, ecosystemApi, LoanTerms, type EngineDecision, type SessionClaims } from '@cred/types';
+import { credApi, ecosystemApi, InsuranceTerms, LoanTerms, Relation, type AcceptOptionKey, type EngineDecision, type SessionClaims } from '@cred/types';
+import { PURPOSE_FOR_SCOPE, revokeConsent } from './aa';
+import { dataUpdated } from './alerts';
 import type { Ctx } from './context';
-import { toCard, toDecision, toHelp, toLoan, toOffer, toPermission, toStatement, toTxn, toPayment } from './mappers';
+import { toAlert, toCard, toDecision, toHelp, toLoan, toOffer, toPermission, toStatement, toTxn, toPayment } from './mappers';
 import { ACTIVE_OFFER_STATUSES } from './snapshot';
 
 type H = ReturnType<typeof handlers>;
@@ -19,11 +21,25 @@ export function memberHandlers(ctx: Ctx, h: H) {
     if (!o || o.memberId !== memberId) throw notFound('Offer');
     return o;
   };
-  const loanTermsFor = (offer: ReturnType<typeof toOffer>, option: 'emi' | 'loan') => {
+  const optionFor = (offer: ReturnType<typeof toOffer>, option: AcceptOptionKey) => {
     const opt = offer.options.find((x) => x.key === option);
     if (!opt?.acceptable || !opt.terms) throw new HttpError(422, 'option_unavailable', `Option ${option} is not available on this offer`);
-    return LoanTerms.parse(opt.terms);
+    return opt;
   };
+  const loanTermsFor = (offer: ReturnType<typeof toOffer>, option: AcceptOptionKey) => LoanTerms.parse(optionFor(offer, option).terms);
+  const isPolicy = (option: AcceptOptionKey) => option === 'policy' || option === 'policy_alt';
+  type OfferContext = {
+    insured?: Record<string, { name: string; relation: string; age: number }[]>;
+    policies?: Record<string, string[]>;
+    terms?: Record<string, unknown[]>;
+    replaces?: Record<string, string | null>;
+    proposal?: { ref: string; option: string; replaces: string | null };
+    collateral?: { kind: 'mutual_fund' | 'fixed_deposit' | 'gold'; ref: string; schemeCode: string | null; units: number | null; valuePaise: number };
+    collateralLabel?: string;
+    holdingId?: string;
+    intentId?: string;
+  };
+  const contextOf = (row: { contextJson: string }) => JSON.parse(row.contextJson) as OfferContext;
   const loanWithSchedule = (id: string) => db.loan.findUniqueOrThrow({ where: { id }, include: { installments: true } });
 
   h.on<typeof credApi.member.home, Auth>(credApi.member.home, async ({ auth }) => {
@@ -36,6 +52,7 @@ export function memberHandlers(ctx: Ctx, h: H) {
         rewards: { select: { coins: true } },
       },
     });
+    const unreadAlerts = await db.memberAlert.count({ where: { memberId: auth.memberId, readAt: null } });
     const card = m.cards[0];
     const bill = card?.statements[0];
     return {
@@ -46,6 +63,7 @@ export function memberHandlers(ctx: Ctx, h: H) {
       smartSavingsGranted: m.permissions.some((p) => p.scope === 'smart_savings' && p.status === 'granted'),
       rewardsCoins: Math.max(0, m.rewards.reduce((a, r) => a + r.coins, 0)),
       simDate: await ctx.simDate(),
+      unreadAlerts,
     };
   });
 
@@ -94,7 +112,13 @@ export function memberHandlers(ctx: Ctx, h: H) {
   });
 
   h.on<typeof credApi.products.decisions, Auth>(credApi.products.decisions, async ({ auth, query }) => {
-    const rows = await db.engineDecision.findMany({ where: { memberId: auth.memberId }, include: { offer: { select: { id: true } } }, orderBy: { createdAt: 'desc' }, take: query.limit });
+    // Everyday purchases that were never a candidate for anything stay in admin's log, not the member's feed
+    const rows = await db.engineDecision.findMany({
+      where: { memberId: auth.memberId, NOT: { feature: 'big_spend_support', reasonsJson: '["no_signal"]' } },
+      include: { offer: { select: { id: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: query.limit,
+    });
     return { decisions: rows.map((d) => memberDecision(toDecision(d))) };
   });
 
@@ -112,7 +136,15 @@ export function memberHandlers(ctx: Ctx, h: H) {
   h.on<typeof credApi.products.keyFacts, Auth>(credApi.products.keyFacts, async ({ auth, params, query }) => {
     const offer = toOffer(await loadOffer(auth.memberId, params.offerId));
     if (offer.status !== 'shown') throw conflict('offer_not_open', `Offer is ${offer.status}`);
-    return loanKeyFacts(offer.id, query.option, loanTermsFor(offer, query.option), activeRules());
+    const row = await loadOffer(auth.memberId, params.offerId);
+    const context = contextOf(row);
+    if (isPolicy(query.option)) {
+      optionFor(offer, query.option);
+      const terms = InsuranceTerms.array().parse(context.terms?.[query.option] ?? []);
+      if (!terms.length) throw new HttpError(422, 'option_unavailable', 'No terms for this option');
+      return insuranceKeyFacts(offer.id, query.option, terms);
+    }
+    return loanKeyFacts(offer.id, query.option, loanTermsFor(offer, query.option), activeRules(), { collateral: context.collateralLabel });
   });
 
   h.on<typeof credApi.products.acceptOffer, Auth>(credApi.products.acceptOffer, async ({ auth, params, body }) => {
@@ -120,17 +152,38 @@ export function memberHandlers(ctx: Ctx, h: H) {
     const offer = toOffer(row);
     if (offer.status !== 'shown') throw conflict('offer_not_open', `Offer is ${offer.status}`);
     if (await db.loan.findUnique({ where: { offerId: row.id } })) throw conflict('already_accepted', 'This offer already has an application');
+    const context = contextOf(row);
+    const member = await db.member.findUniqueOrThrow({ where: { id: auth.memberId }, include: { income: true } });
+
+    if (isPolicy(body.option)) {
+      // Insurance: the member's details go to the insurer only now, after the key facts
+      if (context.proposal) throw conflict('already_accepted', 'This offer already has a proposal');
+      optionFor(offer, body.option);
+      const quoteRefs = context.policies?.[body.option] ?? [];
+      if (!quoteRefs.length) throw new HttpError(422, 'no_quote', 'No insurer quote for this option');
+      const replaces = context.replaces?.[body.option] ?? null;
+      const insured = (context.insured?.[body.option] ?? []).map((p) => ({ name: p.name, relation: Relation.parse(p.relation), age: p.age }));
+      const prop = await ctx.partner(ecosystemApi.insurer.propose, {
+        body: { quoteRefs, proposer: { name: member.name, phone: member.phone }, insured, replacesPolicyRef: replaces, clientRef: row.id },
+      });
+      await db.offer.update({ where: { id: row.id }, data: { contextJson: JSON.stringify({ ...context, proposal: { ref: prop.proposalRef, option: body.option, replaces } }) } });
+      await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'offer.key_facts_acknowledged', target: row.id, details: { option: body.option, insurer: offer.terms.kind === 'insurance' ? offer.terms.insurerName : null } });
+      return { offer, loan: null, policy: null, otp: { sentTo: prop.otpSentTo, demoOtp: prop.demoOtp, purpose: 'Confirm your proposal and the premium payment' } };
+    }
+
     const terms = loanTermsFor(offer, body.option);
     const quoteRef = (JSON.parse(row.quoteRefsJson) as Record<string, string>)[body.option];
     if (!quoteRef) throw new HttpError(422, 'no_quote', 'No partner quote for this option');
+    const collateral = terms.loanKind === 'loan_against_funds' ? (context.collateral ?? null) : null;
+    if (terms.loanKind === 'loan_against_funds' && !collateral) throw new HttpError(422, 'no_collateral', 'Nothing to pledge for this loan');
 
-    const member = await db.member.findUniqueOrThrow({ where: { id: auth.memberId }, include: { income: true } });
     const app = await ctx.partner(ecosystemApi.lender.apply, {
       body: {
         quoteRef,
         applicant: { name: member.name, phone: member.phone },
         verifiedMonthlyIncomePaise: member.income?.monthlyNetPaise ?? null,
         kfsAcknowledgedAt: new Date().toISOString(),
+        collateral,
         clientRef: row.id,
       },
     });
@@ -147,29 +200,36 @@ export function memberHandlers(ctx: Ctx, h: H) {
         tenureMonths: terms.tenureMonths,
         emiPaise: terms.emiPaise,
         processingFeePaise: terms.processingFeePaise,
+        collateralJson: collateral && context.holdingId ? JSON.stringify({ holdingId: context.holdingId, units: collateral.units }) : null,
         status: 'applied',
       },
       include: { installments: true },
     });
     await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'offer.key_facts_acknowledged', target: row.id, details: { option: body.option, lender: terms.lenderName } });
-    return { offer, loan: toLoan(loan), otp: { sentTo: app.otpSentTo, demoOtp: app.demoOtp } };
+    return { offer, loan: toLoan(loan), policy: null, otp: { sentTo: app.otpSentTo, demoOtp: app.demoOtp, purpose: 'E-sign the loan agreement' } };
   });
 
   h.on<typeof credApi.products.confirmOffer, Auth>(credApi.products.confirmOffer, async ({ auth, params, body }) => {
     const row = await loadOffer(auth.memberId, params.offerId);
+    const context = contextOf(row);
     const loan = await db.loan.findUnique({ where: { offerId: row.id } });
-    if (!loan) throw conflict('not_accepted', 'Accept the offer first');
-    if (loan.status === 'applied') {
+    if (!loan && !context.proposal) throw conflict('not_accepted', 'Accept the offer first');
+    if (loan?.status === 'applied') {
       await ctx.partner(ecosystemApi.lender.esign, { params: { applicationRef: loan.applicationRef }, body: { otp: body.otp } });
+    }
+    if (context.proposal && row.status !== 'accepted') {
+      // The insurer collects the premium and issues the policy; it arrives by webhook
+      await ctx.partner(ecosystemApi.insurer.confirmProposal, { params: { proposalRef: context.proposal.ref }, body: { otp: body.otp } });
     }
     const simDate = await ctx.simDate();
     const updated = row.status === 'accepted' ? row : await db.offer.update({ where: { id: row.id }, data: { status: 'accepted', decidedAt: new Date(), decidedSimDate: simDate } });
     if (row.status !== 'accepted') {
-      await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'offer.accepted', target: row.id, details: { option: loan.option, lender: loan.lenderName } });
+      await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'offer.accepted', target: row.id, details: { option: loan?.option ?? context.proposal?.option, partner: loan?.lenderName ?? null } });
+      if (context.intentId) await db.sellIntent.updateMany({ where: { id: context.intentId, status: 'open' }, data: { status: 'borrowed' } });
       hub.member(auth.memberId, { type: 'offer.updated', data: { offer: toOffer(updated) } });
       hub.admin({ type: 'offer.updated', data: { memberId: auth.memberId, offer: toOffer(updated) } });
     }
-    return { offer: toOffer(updated), loan: toLoan(await loanWithSchedule(loan.id)) };
+    return { offer: toOffer(updated), loan: loan ? toLoan(await loanWithSchedule(loan.id)) : null, policy: null };
   });
 
   h.on<typeof credApi.products.declineOffer, Auth>(credApi.products.declineOffer, async ({ auth, params, body }) => {
@@ -230,6 +290,21 @@ export function memberHandlers(ctx: Ctx, h: H) {
     const p = await db.permission.update({ where: { id: existing.id }, data: { status: 'withdrawn', withdrawnAt: new Date() } });
     await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'permission.withdrawn', target: params.scope });
     hub.member(auth.memberId, { type: 'permission.changed', data: { permission: toPermission(p) } });
+    // Data permissions: stop the flow at the source and delete what CRED derived
+    const purpose = PURPOSE_FOR_SCOPE[params.scope];
+    if (purpose) {
+      for (const c of await db.aaConsent.findMany({ where: { memberId: auth.memberId, purpose, status: { in: ['ACTIVE', 'PENDING'] } } })) await revokeConsent(ctx, auth.memberId, c.id, 'system');
+    }
+    if (params.scope === 'health_data') {
+      const link = await db.wearableLink.findUnique({ where: { memberId: auth.memberId } });
+      if (link) {
+        await ctx.partner(ecosystemApi.wearable.unlink, { params: { linkRef: link.linkRef } }).catch((e) => ctx.log.warn({ err: String(e) }, 'wearable unlink failed'));
+        await db.wearableLink.delete({ where: { memberId: auth.memberId } });
+      }
+      const n = (await db.activitySummary.deleteMany({ where: { memberId: auth.memberId } })).count;
+      await ctx.audit({ memberId: auth.memberId, actor: 'system', action: 'wellness.unlinked', target: link?.provider ?? null, details: { summariesDeleted: n } });
+      dataUpdated(ctx, auth.memberId, 'wellness');
+    }
     if (params.scope === 'smart_savings') {
       // Stops immediately: open proactive offers lapse (logged), and the engine blocks new ones.
       const open = await db.offer.findMany({ where: { memberId: auth.memberId, origin: 'proactive', status: { in: ACTIVE_OFFER_STATUSES } } });
@@ -243,16 +318,17 @@ export function memberHandlers(ctx: Ctx, h: H) {
     return { permission: toPermission(p) };
   });
 
-  h.on<typeof credApi.member.creditLadder, Auth>(credApi.member.creditLadder, async ({ auth }) => {
-    const l = await db.ladderProgress.findUnique({ where: { memberId: auth.memberId } });
-    const streak = l?.onTimeStreak ?? 0;
-    const next = LADDER_TIERS.find((t) => t.requiredOnTimeMonths > streak);
-    return {
-      tier: (l?.tier ?? 'starter') as 'starter',
-      onTimeStreak: streak,
-      tiers: LADDER_TIERS.map((t) => ({ ...t, unlocked: streak >= t.requiredOnTimeMonths })),
-      nextTierInMonths: next ? next.requiredOnTimeMonths - streak : null,
-    };
+  // ── Alerts ──────────────────────────────────────────────────────────────────
+
+  h.on<typeof credApi.products.alerts, Auth>(credApi.products.alerts, async ({ auth }) => ({
+    alerts: (await db.memberAlert.findMany({ where: { memberId: auth.memberId }, orderBy: { createdAt: 'desc' }, take: 30 })).map(toAlert),
+  }));
+
+  h.on<typeof credApi.products.readAlert, Auth>(credApi.products.readAlert, async ({ auth, params }) => {
+    const a = await db.memberAlert.findUnique({ where: { id: params.alertId } });
+    if (!a || a.memberId !== auth.memberId) throw notFound('Alert');
+    if (!a.readAt) await db.memberAlert.update({ where: { id: a.id }, data: { readAt: new Date() } });
+    return { ok: true as const };
   });
 
   h.on<typeof credApi.platform.memberStream, Auth>(credApi.platform.memberStream, async ({ auth, reply }) => {

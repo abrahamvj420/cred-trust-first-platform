@@ -64,6 +64,7 @@ tests/e2e/                    `pnpm test:e2e`: starts its own cred-api + ecosyst
 - Lender quotes are anonymous (no member data). Member details go to the lender only when they accept, after the key-fact screen; the lender then sends an e-sign OTP.
 - Demo OTPs: any 6 digits are accepted; the real demo code is shown on screen.
 - Rohan's limit is ₹2.5L so a ₹1.5L purchase can clear the bank; it takes him to ~96% utilisation (stress).
+- Kabir's part-paid wedding bill sits outside the 3-statement stress lookback, so one new part payment doesn't read as a pattern (Card-Balance Switch demo). Priya is 2 in-full bills from Gold (ladder demo) and her policies are linked through AA (protection demo).
 - Pinned versions: pnpm 10, TypeScript 5.9 (not 7), Prisma 7.10.1, Next 16, Zod 4, Vitest 4.
 
 ## Non-negotiable rules
@@ -191,6 +192,39 @@ Keep the rates and fees in a single constants module (`packages/engine/src/const
 CRED app shell, fully polished, with the highest design bar in the project: premium, dark, minimal, mobile-first (390px phone frame, centred on desktop). Extend the cred theme with typography, spacing, radius, elevation and motion tokens first, then build all screens from them. Restrained motion, Indian number formatting, no CRED logos or trademarks.
 Screens: Home (greeting, upcoming bills, cards summary, active offer with "Why am I seeing this?", any help card, rewards balance; bill pay one tap from home) · Cards (due amount, due date, utilisation; detail with recent transactions and Convert to EMI) · Bill pay (full or custom, UPI or bank, confirmation; partial payments recorded correctly) · UPI pay (UPI ID or contact, amount, mock UPI PIN screen in the ecosystem app, success) · Rewards (balance, earn history, redeemable rewards) · Money moments restyled · Loans (active loans, schedule, next due) · Profile (details, Permissions, "Your data and decisions").
 Every screen: loading, empty and error states; AA contrast; 44px tap targets; labels on all inputs; data only via cred-api (contracts first); works for all five personas. Also folded in: the decision feed moved to Profile → "Your data and decisions", and supportive member wording for blocked offers.
+
+## Conventions added in M5
+
+- **Simulated clock:** `POST /sim/v1/clock/advance` plays out each month in date order at the institutions (salary, card spend, each persona's scripted bill habit, statement close with 3.5% + GST on anything carried, EMI collection and rate step-downs, weekly activity summaries, renewal notices, claim progress, fund NAVs, AA "new data" notices), all as signed webhooks, then `sim.clock.advanced`. On that, cred-api applies due dates: each bill becomes `paid_in_full`, `part_paid` or `missed`, which moves the ladder.
+- **Credit ladder:** in full and on time → streak +1, tier rises when the streak reaches it; part paid (≥ minimum, on time) → streak 0, tier kept; missed → streak 0, down one tier. A tier change is recorded as a decision with outcome `available` (shown, never pushed; never an offer).
+- **Credit line** = ladder tier limit and rate, raised by verified salary (limit up to 3× monthly salary, capped ₹5L; rate −1%). It is the limit used by affordability. Hidden while the member shows stress signals.
+- **Scripted bill habits** pay only if the member made no payment that cycle themselves; short of cash they pay what the account allows (never below the minimum, keeping ₹5,000).
+- **Decision outcomes:** `offer | blocked | help | available`. New reason codes `already_covered` (nothing to add) and `needs_data` (policies not linked).
+- **Every feature goes through the engine** (`packages/engine/src/features/*`): pure, two-phase where partner prices are needed (lender or insurer quotes), every check saved. Insurance offers carry `InsuranceTerms`; the "keep things as they are: ₹0" option always comes first, as "pay in full" does for credit.
+- **Insurance net benefit** is measured against the other way of arranging the same cover (add to floater vs separate floater; top-up vs second base policy; standalone own-damage vs comprehensive). Prices always come from the insurer.
+- **Account Aggregator:** one consent per purpose (`income_verification` → DEPOSIT, 6 months, read once; `portfolio_tracking` → MUTUAL_FUNDS + TERM_DEPOSIT, 12 months; `protection_review` → INSURANCE_POLICIES). Approving at SimAA grants the matching permission (`income_data`, `portfolio_data`, `insurance_data`). Withdrawing the permission revokes the consent and deletes what CRED derived. Raw bank transactions are never stored.
+- **Wellness:** CRED stores weekly summaries only (avg steps, active days, score). Reward = share of the floater's 10% max by average score (≥80 full, ≥60 half, ≥40 quarter).
+- **Alerts** (`MemberAlert`) are information only (market fall, collateral, renewal, claim, ladder, loan, policy), idempotent by source event, never offers.
+- **Member decision feed** hides everyday purchases that were never candidates (Big-Spend `no_signal`); admin shows everything.
+- **Lender quotes** carry one anonymous attribute: `incomeVerified` (priced 1% lower). Loans against holdings go to Keystone Capital (secured); the lender checks its own loan-to-value limits (CRED's rules are stricter) and marks a lien.
+- **HTTP:** services close each connection after responding (service-kit `onSend` hook). On Node 26, a keep-alive socket that answered while the process had outgoing fetches in flight parks the next request until the 30 s connection sweep.
+
+## M5 brief (as given)
+
+Start M5. Same rules: tests and boundary checker green or STOP and report; commit, tag "m5", push; add an M5 section to REVIEW.md with decisions, deviations, gaps and screenshots in docs/screenshots/m5/; keep CLAUDE.md updated.
+
+First, close the M4 gap: statements must close on the simulated clock, and on-time payments must update credit ladder streaks. "Advance a month" (a /sim endpoint, wired to the control room in M6) closes statements, applies due dates, updates streaks and moves members up tiers.
+
+Then build features 2–8, each from its real-world trigger, all through the shared engine and every business rule:
+2. Wealth-Backed Liquidity: member starts selling funds/FDs/gold in CRED → sell vs borrow (tax, lost returns, interest) → loan against portfolio via lender; loan capped at a conservative share of value; market-fall alert as a /sim scenario.
+3. Earned Credit Ladder: tiers from on-time bill payments; next tier and payments needed shown; limits shown as available, never pushed.
+4. Family Health Insurance + Wellness Rewards: add parents/children; floater comparison from the insurer with waiting periods stated clearly; mock Apple Health / Google Health Connect sends only a summary activity score; premium reward shown.
+5. Salary-Verified Credit: member chooses to verify → Account Aggregator consent screen in the ecosystem app → bank salary data → better limit and rate; never triggers new offers by itself.
+6. Protection-Gap Engine + Claims Concierge: reads existing cover including employer cover; insurer renewal or new vehicle triggers a gap check; recommends the cheapest way to close it, nothing if covered; claim filing and tracking with status updates from the insurer by webhook.
+7. Wealth Management: link portfolio via Account Aggregator (gold self-declared); tracking, goals, fees disclosed; advice kept separate from product sales.
+8. Card-Balance Switch: partial bill payment → interest saved by moving the balance to an EMI; rate steps down for on-time payments.
+
+Match the M4 design system and supportive wording rules. For each feature: unit tests plus e2e tests covering its trigger, happy path and at least one blocked case. Stop after M5.
 
 ## Milestones
 

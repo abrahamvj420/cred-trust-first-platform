@@ -1,4 +1,4 @@
-import { LADDER_TIERS, type MemberSnapshot } from '@cred/engine';
+import { creditLine, type MemberSnapshot } from '@cred/engine';
 import { CreditTier, FeatureKey } from '@cred/types';
 import type { Ctx } from './context';
 
@@ -49,7 +49,8 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
     smartSavingsLastAskedOn: lastAskedOn,
     verifiedMonthlyIncomePaise: member.income?.monthlyNetPaise ?? null,
     existingEmiPaise: member.loans.reduce((a, l) => a + l.emiPaise, 0),
-    ladder: { tier, limitPaise: LADDER_TIERS.find((t) => t.tier === tier)!.limitPaise },
+    // The limit in force: the ladder tier's, raised by verified salary
+    ladder: { tier, limitPaise: creditLine(tier, member.income?.monthlyNetPaise ?? null, false).limitPaise },
     offers: {
       activeOfferId: active?.id ?? null,
       proactiveThisMonth: member.offers.filter((o) => o.origin === 'proactive' && o.simDate.startsWith(month)).length,

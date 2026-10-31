@@ -26,3 +26,12 @@ export function greeting(now = new Date()): string {
 
 export const firstName = (name: string) => name.split(' ')[0] ?? name;
 export const pct = (bps: number) => `${Math.round(bps / 100)}%`;
+
+/** ₹5,00,000 → "₹5 lakh" (cover amounts read better this way). */
+export const lakhs = (paise: number) => {
+  const l = paise / 1_00_000_00;
+  return l >= 100 ? `₹${Number((l / 100).toFixed(2))} crore` : `₹${Number(l.toFixed(1))} lakh`;
+};
+export const tierName = (t: string) => t[0]!.toUpperCase() + t.slice(1);
+export const RELATION_LABEL: Record<string, string> = { self: 'You', spouse: 'Spouse', child: 'Child', parent: 'Parent', parent_in_law: 'Parent-in-law' };
+export const rate = (bps: number) => `${Number((bps / 100).toFixed(2))}%`;

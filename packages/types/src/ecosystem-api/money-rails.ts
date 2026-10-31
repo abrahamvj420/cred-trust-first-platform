@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Bps, Id, IsoDate, IsoDateTime, NonNegativePaise, PositivePaise } from '../common';
 import { endpoint } from '../contract';
 import { AaConsentStatus, AaFiType, AaPurpose, GatewayPaymentStatus, PaymentMethod, PolicyKind, Relation, UpiStatus } from '../enums';
+import { Vehicle } from '../domain';
 
 // ── /bank: Mock Bank (card issuer, accounts, salary credits) ──────────────────
 
@@ -96,6 +97,15 @@ export const bankEndpoints = {
       statementPaidPaise: NonNegativePaise,
       outstandingPaise: NonNegativePaise,
     }),
+  }),
+  withdrawFd: endpoint({
+    method: 'POST',
+    path: '/bank/v1/fixed-deposits/:fdRef/withdraw',
+    auth: 'partner',
+    summary: 'Break (part of) a fixed deposit on the customer’s instruction; money goes to their account',
+    params: z.object({ fdRef: Id }),
+    body: z.object({ amountPaise: PositivePaise, clientRef: Id }),
+    response: z.object({ withdrawalRef: Id, creditedPaise: PositivePaise, penaltyPaise: NonNegativePaise }),
   }),
 } as const;
 
@@ -267,11 +277,13 @@ export const FiData = z.object({
       productName: z.string(),
       kind: PolicyKind,
       coverPaise: PositivePaise,
+      deductiblePaise: NonNegativePaise,
       annualPremiumPaise: NonNegativePaise,
       isEmployer: z.boolean(),
       employerName: z.string().nullable(),
       membersCovered: z.array(Relation),
       renewalDate: IsoDate.nullable(),
+      vehicle: Vehicle.nullable(),
     }),
   ),
 });
@@ -287,7 +299,10 @@ export const AaConsentDetail = z.object({
   validForMonths: z.number().int().positive(),
   status: AaConsentStatus,
   customerName: z.string(),
-  accounts: z.array(z.object({ accountRef: Id, fipName: z.string(), fiType: AaFiType, masked: z.string() })),
+  accounts: z.array(z.object({ accountRef: Id, fipName: z.string(), fiType: AaFiType, masked: z.string(), label: z.string() })),
+  /** Where the customer goes back after deciding. */
+  redirectUrl: z.url(),
+  decidedAt: IsoDateTime.nullable(),
 });
 
 export const aaEndpoints = {

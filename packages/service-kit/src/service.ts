@@ -53,6 +53,15 @@ export function createService(opts: ServiceOptions) {
 
   app.register(cors, { origin: APP_ORIGINS, credentials: true, methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] });
 
+  // One request per connection. On Node 26, a keep-alive socket that answered a request while this
+  // process had outgoing fetches in flight (e.g. webhook delivery) parks its next request until the
+  // server's 30-second connection sweep. Closing after each response avoids that; on localhost the
+  // cost is negligible. SSE streams hijack the socket and are unaffected.
+  app.addHook('onSend', async (_req, reply, payload) => {
+    reply.header('connection', 'close');
+    return payload;
+  });
+
   // Keep the raw body: webhook signatures are computed over the exact bytes.
   app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
     req.rawBody = body as string;

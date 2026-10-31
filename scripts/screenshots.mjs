@@ -58,6 +58,20 @@ async function buy(key, amountPaise, item) {
   await http(`${ECO_API}/bank/v1/card-auth/${authId}/otp`, { method: 'POST', body: { otp: '123456' } });
 }
 
+/** Wait for every partner webhook to be delivered (and background engine runs to finish). */
+async function drain() {
+  await until(async () => (await http(`${ECO_API}/sim/v1/outbox`)).pending === 0, 'outbox drained', 20000);
+  await new Promise((r) => setTimeout(r, 600));
+}
+const scenario = async (s, personaKey) => {
+  await http(`${ECO_API}/sim/v1/scenarios`, { method: 'POST', body: { scenario: s, personaKey } });
+  await drain();
+};
+const advance = async (months = 1) => {
+  await http(`${ECO_API}/sim/v1/clock/advance`, { method: 'POST', body: { months } });
+  await drain();
+};
+
 async function until(fn, what, ms = 15000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
@@ -176,6 +190,15 @@ for (const key of PERSONAS) {
   await visit(`${CRED}/profile`, `${key} profile`, { shot: first ? '25-profile' : undefined });
   await visit(`${CRED}/profile/data`, `${key} data and decisions`, { shot: key === 'kabir' ? '26-data-empty' : undefined });
   await visit(`${CRED}/permissions`, `${key} permissions`, { shot: key === 'sneha' ? '27-permissions' : undefined });
+  // M5 screens
+  await visit(`${CRED}/credit`, `${key} credit`, { shot: key === 'kabir' ? 'm5-01-credit-ladder' : key === 'rohan' ? 'm5-02-credit-hidden' : undefined });
+  await visit(`${CRED}/credit/salary`, `${key} salary`, { shot: first ? 'm5-03-salary-explainer' : undefined });
+  await visit(`${CRED}/wealth`, `${key} wealth`, { shot: key === 'sneha' ? 'm5-10-wealth' : first ? 'm5-11-wealth-empty' : undefined });
+  await visit(`${CRED}/protect`, `${key} protect`, { shot: key === 'priya' ? 'm5-20-protect' : first ? 'm5-21-protect-unlinked' : undefined });
+  await visit(`${CRED}/protect/family`, `${key} family`);
+  await visit(`${CRED}/protect/wellness`, `${key} wellness`, { shot: key === 'priya' ? 'm5-25-wellness' : first ? 'm5-26-wellness-connect' : undefined });
+  await visit(`${CRED}/protect/claims`, `${key} claims`);
+  await visit(`${CRED}/alerts`, `${key} alerts`, { shot: first ? 'm5-40-alerts-empty' : undefined });
   log(`${key}: all screens render`);
 }
 
@@ -299,6 +322,209 @@ await visit(`${CRED}/cards/not-a-card`, 'error state', { shot: '28-error-state',
   await settle();
   await check('help card', { shot: '29-home-help' });
   log('help card shown for Rohan');
+}
+
+// ── M5 flows ────────────────────────────────────────────────────────────────
+
+// Clock: Priya pays two more bills in full → Gold unlocked (shown as available, never pushed)
+{
+  await reset();
+  await signIn('priya');
+  await advance(2);
+  await visit(`${CRED}/credit`, 'priya gold', { shot: 'm5-04-credit-gold' });
+  await visit(`${CRED}/alerts`, 'priya alerts', { shot: 'm5-05-alerts-ladder' });
+  log('clock: two months advanced, Gold unlocked');
+}
+
+// Card-Balance Switch: Kabir pays part of his bill in CRED
+{
+  await reset();
+  const token = await signIn('kabir');
+  const { cards } = await http(`${CRED_API}/v1/cards`, { headers: asMember(token) });
+  await http(`${CRED_API}/v1/cards/${cards[0].id}/bill-payments`, { method: 'POST', headers: asMember(token), body: { kind: 'custom', amountPaise: 30_000_00, source: 'upi' } });
+  await page.goto(CRED, { waitUntil: 'domcontentloaded' });
+  await waitText('If you carry the remaining', 20000);
+  await settle();
+  await check('switch offer', { shot: 'm5-06-home-switch-offer' });
+  const offerId = (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active.id;
+  await visit(`${CRED}/offers/${offerId}`, 'switch compare', { shot: 'm5-07-switch-compare' });
+  await visit(`${CRED}/offers/${offerId}/key-facts?option=emi`, 'switch key facts', { shot: 'm5-08-switch-key-facts' });
+  await page.click('input[type=checkbox]');
+  await clickText('Accept', 'button');
+  await page.waitForSelector('input[autocomplete=one-time-code]');
+  await page.type('input[autocomplete=one-time-code]', '654321');
+  await clickText('Confirm and sign', 'button');
+  await until(() => page.evaluate(() => location.pathname.startsWith('/loans/')), 'switch schedule', 20000);
+  await drain();
+  await advance(2);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await settle();
+  await check('switch stepped down', { shot: 'm5-09-switch-rate-stepped' });
+  log('card-balance switch: part payment → EMI → rate stepped down after 2 on-time EMIs');
+}
+
+// Wealth-Backed Liquidity: Sneha starts selling → sell vs borrow → borrow; then a market fall
+{
+  await reset();
+  const token = await signIn('sneha');
+  const { holdings } = await http(`${CRED_API}/v1/wealth/holdings`, { headers: asMember(token) });
+  const fund = holdings.find((h) => h.name.startsWith('Meridian Flexi'));
+  await visit(`${CRED}/wealth/holdings/${fund.id}`, 'holding', { shot: 'm5-12-holding' });
+  await visit(`${CRED}/wealth/holdings/${fund.id}/sell`, 'start selling');
+  await page.type('input[inputmode=numeric]', '200000');
+  await settle();
+  await check('start selling', { shot: 'm5-13-sell-start' });
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('See what it costs', 'button')]);
+  await waitText('Borrow against it');
+  await settle();
+  await check('sell vs borrow', { shot: 'm5-14-sell-vs-borrow' });
+  await clickText('Borrow instead', 'a');
+  await waitText('Your options');
+  await settle();
+  await check('laf compare', { shot: 'm5-15-laf-compare' });
+  const offerId = (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active.id;
+  await visit(`${CRED}/offers/${offerId}/key-facts?option=loan`, 'laf key facts', { shot: 'm5-16-laf-key-facts' });
+  await page.click('input[type=checkbox]');
+  await clickText('Accept', 'button');
+  await page.waitForSelector('input[autocomplete=one-time-code]');
+  await page.type('input[autocomplete=one-time-code]', '654321');
+  await clickText('Confirm and sign', 'button');
+  await until(() => page.evaluate(() => location.pathname.startsWith('/loans/')), 'laf schedule', 20000);
+  await scenario('market_fall', 'sneha');
+  await visit(`${CRED}/alerts`, 'market fall alerts', { shot: 'm5-17-alerts-market-fall' });
+  // Above the safe share: selling is the way
+  const big = Math.floor((fund.valuePaise * 0.9) / 100 / 100);
+  await visit(`${CRED}/wealth/holdings/${holdings.find((h) => h.kind === 'mutual_fund' && h.id !== fund.id).id}/sell`, 'start selling 2');
+  await page.type('input[inputmode=numeric]', String(Math.min(big, 250000)));
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('See what it costs', 'button')]);
+  await waitText('Sell it');
+  await settle();
+  await check('sell only', { shot: 'm5-18-sell-only' });
+  log('wealth-backed liquidity: sell vs borrow → loan against fund → market-fall alerts');
+}
+
+// Salary-Verified Credit and Wealth Management: Aarav links through the Account Aggregator
+{
+  await reset();
+  await signIn('aarav');
+  await visit(`${CRED}/credit/salary`, 'salary');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Continue to Account Aggregator', 'button')]);
+  await waitText('Choose what to share');
+  await settle();
+  await check('aa consent', { shot: 'm5-30-aa-consent' });
+  await page.click('input[type=checkbox]');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Approve', 'button')]);
+  await until(() => page.evaluate(() => location.pathname === '/credit/salary'), 'back from AA', 20000);
+  await waitText('Salary verified', 20000);
+  await settle();
+  await check('salary verified', { shot: 'm5-31-salary-verified' });
+  await visit(`${CRED}/credit`, 'credit after salary', { shot: 'm5-32-credit-salary' });
+
+  await visit(`${CRED}/wealth/link`, 'link wealth', { shot: 'm5-33-wealth-link' });
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Continue to Account Aggregator', 'button')]);
+  await waitText('Choose what to share');
+  for (const box of await page.$$('input[type=checkbox]')) await box.click();
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Approve', 'button')]);
+  await until(() => page.evaluate(() => location.pathname === '/wealth'), 'back to wealth', 20000);
+  await visit(`${CRED}/wealth/gold`, 'add gold', { shot: 'm5-34-gold' });
+  await page.type('input[inputmode=decimal]', '10');
+  await page.type('input[inputmode=numeric]', '60000');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Add gold', 'button')]);
+  await visit(`${CRED}/wealth/goals/new`, 'new goal');
+  const inputs = await page.$$('main input');
+  await inputs[0].type('Sabbatical');
+  await inputs[1].type('600000');
+  await inputs[3].click({ clickCount: 3 });
+  await inputs[3].type('100000');
+  await clickText('Plan this goal', 'button');
+  await waitText('Your plan', 20000);
+  await settle();
+  await check('goal plan', { shot: 'm5-35-goal-plan' });
+  await visit(`${CRED}/wealth`, 'wealth linked', { shot: 'm5-36-wealth-linked' });
+  log('salary verified and portfolio linked through the Account Aggregator; gold and a goal added');
+}
+
+// Family Health Insurance: Priya adds her parents and compares two ways from the insurer
+{
+  await reset();
+  const token = await signIn('priya');
+  for (const p of [
+    { name: 'Gopal Menon', relation: 'parent', age: 68 },
+    { name: 'Lakshmi Menon', relation: 'parent', age: 64 },
+  ]) {
+    await http(`${CRED_API}/v1/insurance/family`, { method: 'POST', headers: asMember(token), body: p });
+  }
+  await visit(`${CRED}/protect/family`, 'family');
+  await clickText('Gopal Menon', 'label');
+  await clickText('Lakshmi Menon', 'label');
+  await clickText('₹5 lakh', 'label');
+  await clickText('Compare from the insurer', 'button');
+  await waitText('Waiting periods', 20000);
+  await settle();
+  await check('floater comparison', { shot: 'm5-22-floater-compare' });
+  const offerId = (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active.id;
+  await visit(`${CRED}/offers/${offerId}/key-facts?option=policy_alt`, 'insurance key facts', { shot: 'm5-23-insurance-key-facts' });
+  await page.click('input[type=checkbox]');
+  await clickText('Accept', 'button');
+  await page.waitForSelector('input[autocomplete=one-time-code]');
+  await page.type('input[autocomplete=one-time-code]', '654321');
+  await clickText('Confirm and pay premium', 'button');
+  await until(() => page.evaluate(() => location.pathname === '/protect'), 'protect after purchase', 20000);
+  await drain();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await settle();
+  await check('policy issued', { shot: 'm5-24-policy-issued' });
+  log('family floater: compare → key facts with waiting periods → policy issued');
+}
+
+// Protection gap: insurer renewal, then (fresh world) a new car with third-party cover only
+{
+  await reset();
+  const token = await signIn('priya');
+  await scenario('insurer_renewal', 'priya');
+  await visit(`${CRED}/protect`, 'gap after renewal', { shot: 'm5-27-gap-renewal' });
+  const offerId = (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active.id;
+  await visit(`${CRED}/offers/${offerId}`, 'gap compare', { shot: 'm5-28-gap-topup' });
+  await reset();
+  const t2 = await signIn('priya');
+  await scenario('new_vehicle', 'priya');
+  await until(async () => (await http(`${CRED_API}/v1/offers`, { headers: asMember(t2) })).active, 'motor offer');
+  await visit(`${CRED}/`, 'home motor offer', { shot: 'm5-29-home-motor-gap' });
+  log('protection gap: renewal → top-up; new car → own-damage cover');
+}
+
+// Claims concierge
+{
+  await reset();
+  await signIn('priya');
+  await visit(`${CRED}/protect/claims/new`, 'new claim');
+  await clickText('Sahaj Family Floater', 'label');
+  const inputs = await page.$$('main input');
+  await inputs.at(-2).type('45000');
+  await inputs.at(-1).type('Diya: two nights at Seaview Hospital, fever');
+  await settle();
+  await check('new claim', { shot: 'm5-37-claim-new' });
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('File with the insurer', 'button')]);
+  await scenario('claim_update', 'priya');
+  await scenario('claim_update', 'priya');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await settle();
+  await check('claim timeline', { shot: 'm5-38-claim-timeline' });
+  log('claims: filed → insurer updates by webhook');
+}
+
+// Rohan: a part payment brings help, not a switch
+{
+  await reset();
+  const token = await signIn('rohan');
+  const { cards } = await http(`${CRED_API}/v1/cards`, { headers: asMember(token) });
+  await http(`${CRED_API}/v1/cards/${cards[0].id}/bill-payments`, { method: 'POST', headers: asMember(token), body: { kind: 'custom', amountPaise: 5_000_00, source: 'upi' } });
+  await page.goto(CRED, { waitUntil: 'domcontentloaded' });
+  await waitText('Here to help', 20000);
+  await settle();
+  await check('rohan help after part payment', { shot: 'm5-39-home-help-switch' });
+  await visit(`${CRED}/profile/data`, 'rohan decisions', { shot: 'm5-41-decisions' });
+  log('rohan: help instead of a balance switch');
 }
 
 await browser.close();

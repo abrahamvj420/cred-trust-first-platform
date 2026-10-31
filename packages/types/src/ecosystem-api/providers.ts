@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { Bps, Id, IsoDate, IsoDateTime, NonNegativePaise, Ok, PositivePaise, ServiceStatus } from '../common';
 import { endpoint } from '../contract';
-import { EmiInstallment } from '../domain';
-import { ClaimStatus, LoanKind, LoanStatus, PersonaKey, PolicyKind, Relation, Scenario, WearableProvider } from '../enums';
+import { EmiInstallment, Vehicle, WaitingPeriod } from '../domain';
+import { ClaimStatus, HoldingKind, LoanKind, LoanStatus, PersonaKey, PolicyKind, Relation, Scenario, WearableProvider } from '../enums';
 
 // ── /lender ───────────────────────────────────────────────────────────────────
 
@@ -33,6 +33,8 @@ export const lenderEndpoints = {
       kind: LoanKind,
       principalPaise: PositivePaise,
       tenureMonths: z.number().int().min(3).max(60),
+      /** The only thing a quote learns about the applicant: whether their salary is verified (priced 1% lower). */
+      incomeVerified: z.boolean().default(false),
       clientRef: Id,
     }),
     response: LoanQuote,
@@ -47,6 +49,11 @@ export const lenderEndpoints = {
       applicant: z.object({ name: z.string(), phone: z.string().regex(/^\d{10}$/) }),
       verifiedMonthlyIncomePaise: PositivePaise.nullable(),
       kfsAcknowledgedAt: IsoDateTime,
+      /** Loan against holdings: what is pledged. The lender checks its own loan-to-value limit. */
+      collateral: z
+        .object({ kind: HoldingKind, ref: z.string(), schemeCode: z.string().nullable(), units: z.number().positive().nullable(), valuePaise: PositivePaise })
+        .nullable()
+        .default(null),
       clientRef: Id,
     }),
     response: z.object({ applicationRef: Id, status: LoanStatus, otpSentTo: z.string(), demoOtp: z.string() }),
@@ -72,18 +79,26 @@ export const lenderEndpoints = {
 
 // ── /insurer ──────────────────────────────────────────────────────────────────
 
+export const InsurerProduct = z.enum(['family_floater', 'super_top_up', 'motor_own_damage', 'motor_comprehensive']);
+
 export const InsurerQuote = z.object({
   quoteRef: Id,
   insurerName: z.string(),
   productName: z.string(),
-  kind: z.enum(['family_floater', 'super_top_up']),
+  kind: InsurerProduct,
   coverPaise: PositivePaise,
   deductiblePaise: NonNegativePaise,
   annualPremiumPaise: PositivePaise,
+  gstPaise: NonNegativePaise,
   wellnessRewardMaxPct: z.number().min(0).max(100),
   members: z.array(z.object({ relation: Relation, age: z.number().int() })),
+  vehicle: Vehicle.nullable(),
+  waitingPeriods: z.array(WaitingPeriod),
+  freeLookDays: z.number().int().nonnegative(),
 });
 export type InsurerQuote = z.infer<typeof InsurerQuote>;
+
+const Members = z.array(z.object({ relation: Relation, age: z.number().int().min(0).max(110) })).min(1);
 
 export const InsurerPolicyView = z.object({
   policyRef: Id,
@@ -103,22 +118,38 @@ export const insurerEndpoints = {
     method: 'POST',
     path: '/insurer/v1/quotes',
     auth: 'partner',
-    summary: 'Quote a family floater or super top-up',
-    body: z.object({
-      product: z.enum(['family_floater', 'super_top_up']),
-      members: z.array(z.object({ relation: Relation, age: z.number().int().min(0).max(110) })).min(1),
-      coverPaise: PositivePaise,
-      deductiblePaise: NonNegativePaise.default(0),
-    }),
+    summary: 'Anonymous quote: ages and relations only (health) or the vehicle (motor)',
+    body: z.discriminatedUnion('product', [
+      z.object({ product: z.literal('family_floater'), members: Members, coverPaise: PositivePaise, clientRef: Id }),
+      z.object({ product: z.literal('super_top_up'), members: Members, coverPaise: PositivePaise, deductiblePaise: PositivePaise, clientRef: Id }),
+      z.object({ product: z.enum(['motor_own_damage', 'motor_comprehensive']), vehicle: Vehicle, clientRef: Id }),
+    ]),
     response: InsurerQuote,
   }),
-  issue: endpoint({
+  propose: endpoint({
     method: 'POST',
-    path: '/insurer/v1/policies',
+    path: '/insurer/v1/proposals',
     auth: 'partner',
-    summary: 'Issue a policy on a quote',
-    body: z.object({ quoteRef: Id, proposer: z.object({ name: z.string(), phone: z.string().regex(/^\d{10}$/) }), clientRef: Id }),
-    response: z.object({ policyRef: Id, status: z.enum(['issued', 'pending']) }),
+    summary: 'Proposal on a quote, after the member saw the key facts; the insurer sends a confirmation OTP',
+    body: z.object({
+      /** One proposal can cover several quotes (e.g. a base policy and a top-up): one OTP. */
+      quoteRefs: z.array(Id).min(1),
+      proposer: z.object({ name: z.string(), phone: z.string().regex(/^\d{10}$/) }),
+      insured: z.array(z.object({ name: z.string(), relation: Relation, age: z.number().int() })),
+      /** A floater that the new one replaces (e.g. parents added to the family floater); cancelled on issue. */
+      replacesPolicyRef: Id.nullable().default(null),
+      clientRef: Id,
+    }),
+    response: z.object({ proposalRef: Id, otpSentTo: z.string(), demoOtp: z.string() }),
+  }),
+  confirmProposal: endpoint({
+    method: 'POST',
+    path: '/insurer/v1/proposals/:proposalRef/confirm',
+    auth: 'partner',
+    summary: 'Confirm with the OTP; premium is collected from the proposer’s bank and the policy is issued (webhook follows)',
+    params: z.object({ proposalRef: Id }),
+    body: z.object({ otp: z.string().regex(/^\d{6}$/) }),
+    response: z.object({ policyRefs: z.array(Id), status: z.literal('issued') }),
   }),
   fileClaim: endpoint({
     method: 'POST',
@@ -161,14 +192,6 @@ export const fundhouseEndpoints = {
     body: z.object({ folio: z.string(), schemeCode: z.string(), amountPaise: PositivePaise, clientRef: Id }),
     response: z.object({ redemptionRef: Id, status: z.enum(['requested', 'completed']) }),
   }),
-  lien: endpoint({
-    method: 'POST',
-    path: '/fundhouse/v1/liens',
-    auth: 'partner',
-    summary: 'Mark a lien for a loan against funds',
-    body: z.object({ folio: z.string(), schemeCode: z.string(), units: z.number().positive(), lenderApplicationRef: Id }),
-    response: z.object({ lienRef: Id, status: z.enum(['marked', 'rejected']) }),
-  }),
   portfolio: endpoint({
     method: 'GET',
     path: '/fundhouse/v1/customers/:customerRef/portfolio',
@@ -191,6 +214,13 @@ export const fundhouseEndpoints = {
         }),
       ),
     }),
+  }),
+  nav: endpoint({
+    method: 'GET',
+    path: '/fundhouse/v1/schemes',
+    auth: 'none',
+    summary: 'Published NAVs (public market data)',
+    response: z.object({ asOf: IsoDate, schemes: z.array(z.object({ code: z.string(), name: z.string(), navPaise: PositivePaise })) }),
   }),
 } as const;
 
@@ -222,6 +252,8 @@ export const wearableEndpoints = {
     response: z.object({
       provider: WearableProvider.nullable(),
       days: z.array(z.object({ date: IsoDate, steps: z.number().int().nonnegative() })),
+      sharedWith: z.array(z.object({ app: z.string(), what: z.string() })),
+      personName: z.string(),
     }),
   }),
 } as const;
@@ -253,6 +285,13 @@ export const simEndpoints = {
     summary: 'Fire a real-world scenario for a persona',
     body: z.object({ scenario: Scenario, personaKey: PersonaKey }),
     response: z.object({ scenario: Scenario, personaKey: PersonaKey, eventsEmitted: z.number().int().nonnegative(), note: z.string() }),
+  }),
+  outbox: endpoint({
+    method: 'GET',
+    path: '/sim/v1/outbox',
+    auth: 'demo',
+    summary: 'Webhooks not yet delivered (tests and the control room wait for zero)',
+    response: z.object({ pending: z.number().int().nonnegative() }),
   }),
   reset: endpoint({
     method: 'POST',

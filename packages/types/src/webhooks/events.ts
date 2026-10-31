@@ -12,7 +12,7 @@ import {
   UpiStatus,
   WearableProvider,
 } from '../enums';
-import { ActivitySummary, EmiInstallment } from '../domain';
+import { ActivitySummary, EmiInstallment, Vehicle } from '../domain';
 
 /**
  * Events the outside world (ecosystem-api) sends to CRED. CRED learns nothing
@@ -56,6 +56,9 @@ export const BankCardStatementGenerated = base(
     totalDuePaise: NonNegativePaise,
     minDuePaise: NonNegativePaise,
     dueDate: IsoDate,
+    /** Card balance after the statement (includes any interest charged). */
+    outstandingPaise: NonNegativePaise,
+    interestPaise: NonNegativePaise,
   }),
 );
 
@@ -71,6 +74,8 @@ export const BankCardPaymentReceived = base(
     receivedAt: IsoDateTime,
     onTime: z.boolean(),
     outstandingPaise: NonNegativePaise,
+    /** Paid at the bank (e.g. standing instruction) or by a lender clearing the balance. */
+    paidBy: z.enum(['bank_autopay', 'lender']),
   }),
 );
 
@@ -138,7 +143,36 @@ export const LenderLoanDisbursed = base(
 export const LenderEmiCollected = base(
   'lender.emi.collected',
   'lender',
-  z.object({ loanRef: Id, n: z.number().int().positive(), amountPaise: PositivePaise, onTime: z.boolean() }),
+  z.object({ loanRef: Id, clientRef: Id, n: z.number().int().positive(), amountPaise: PositivePaise, onTime: z.boolean() }),
+);
+
+/** Card-Balance Switch: the rate steps down after on-time payments; remaining instalments are re-priced. */
+export const LenderLoanRepriced = base(
+  'lender.loan.repriced',
+  'lender',
+  z.object({
+    loanRef: Id,
+    clientRef: Id,
+    ratePaBps: Bps,
+    afterOnTimePayments: z.number().int().positive(),
+    remaining: z.array(EmiInstallment),
+  }),
+);
+
+/** Loan against holdings: the pledged holdings' value moved and the loan is now this share of it. */
+export const LenderCollateralAlert = base(
+  'lender.collateral.alert',
+  'lender',
+  z.object({
+    loanRef: Id,
+    clientRef: Id,
+    collateralValuePaise: NonNegativePaise,
+    outstandingPaise: NonNegativePaise,
+    loanToValueBps: Bps,
+    maxLoanToValueBps: Bps,
+    /** Prepay this much (or pledge more) to get back within the limit; 0 = nothing to do. */
+    topUpNeededPaise: NonNegativePaise,
+  }),
 );
 
 export const InsurerPolicyRenewalDue = base(
@@ -154,6 +188,7 @@ export const InsurerPolicyRenewalDue = base(
   }),
 );
 
+/** A policy bought through CRED was issued (clientRef = CRED's offer). Other policies reach CRED only through Account Aggregator. */
 export const InsurerPolicyIssued = base(
   'insurer.policy.issued',
   'insurer',
@@ -165,9 +200,11 @@ export const InsurerPolicyIssued = base(
     productName: z.string(),
     kind: PolicyKind,
     coverPaise: PositivePaise,
+    deductiblePaise: NonNegativePaise,
     annualPremiumPaise: PositivePaise,
     membersCovered: z.array(Relation),
     renewalDate: IsoDate,
+    vehicle: Vehicle.nullable(),
   }),
 );
 
@@ -180,13 +217,22 @@ export const InsurerClaimUpdated = base(
 export const FundhouseRedemptionCompleted = base(
   'fundhouse.redemption.completed',
   'fundhouse',
-  z.object({ redemptionRef: Id, clientRef: Id, amountPaise: PositivePaise, completedAt: IsoDateTime }),
+  z.object({
+    redemptionRef: Id,
+    clientRef: Id,
+    folio: z.string(),
+    schemeCode: z.string(),
+    units: z.number().positive(),
+    amountPaise: PositivePaise,
+    completedAt: IsoDateTime,
+  }),
 );
 
 export const WearableActivitySummary = base(
   'wearable.activity.summary',
   'wearable',
-  z.object({ customerRef: Id, provider: WearableProvider, summary: ActivitySummary }),
+  /** clientRef: the sharing app's own id for the member, given when the link was made. */
+  z.object({ customerRef: Id, clientRef: Id, provider: WearableProvider, summary: ActivitySummary }),
 );
 
 export const SimClockAdvanced = base(
@@ -205,6 +251,8 @@ export const WebhookEvent = z.discriminatedUnion('type', [
   LenderLoanDecided,
   LenderLoanDisbursed,
   LenderEmiCollected,
+  LenderLoanRepriced,
+  LenderCollateralAlert,
   InsurerPolicyRenewalDue,
   InsurerPolicyIssued,
   InsurerClaimUpdated,

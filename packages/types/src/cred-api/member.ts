@@ -6,6 +6,7 @@ import {
   BillPayment,
   BillPaymentSource,
   Card,
+  CreditLine,
   CardTransaction,
   IncomeProfile,
   LadderStatus,
@@ -35,6 +36,8 @@ export const HomeSummary = z.object({
   rewardsCoins: z.number().int().nonnegative(),
   /** Today in the simulated world, for "due in N days". */
   simDate: z.iso.date(),
+  /** Unread alerts (information only). */
+  unreadAlerts: z.number().int().nonnegative(),
 });
 export type HomeSummary = z.infer<typeof HomeSummary>;
 
@@ -92,7 +95,11 @@ export const PermissionGrantRequest = z.object({
   explicit: z.literal(true),
 });
 
-export const AaConsentStartRequest = z.object({ purpose: AaPurpose });
+export const AaConsentStartRequest = z.object({
+  purpose: AaPurpose,
+  /** Where to bring the member back in the CRED app after the Account Aggregator page. */
+  returnTo: z.string().regex(/^\/[\w\-/?=&.]*$/).default('/'),
+});
 export const AaConsentStartResponse = z.object({
   consent: AaConsent,
   /** Account Aggregator approval page in the ecosystem app. */
@@ -254,18 +261,31 @@ export const memberEndpoints = {
     params: z.object({ consentId: Id }),
     response: z.object({ consent: AaConsent }),
   }),
+  aaConsent: endpoint({
+    method: 'GET',
+    path: '/v1/aa/consents/:consentId',
+    auth: 'member',
+    summary: 'One Account Aggregator consent (the app polls it after returning from the AA page)',
+    params: z.object({ consentId: Id }),
+    response: z.object({ consent: AaConsent, dataReady: z.boolean(), returnTo: z.string() }),
+  }),
   income: endpoint({
     method: 'GET',
     path: '/v1/income',
     auth: 'member',
-    summary: 'Verified income, if the member verified it',
-    response: z.object({ income: IncomeProfile.nullable() }),
+    summary: 'Verified income and what it changed. Verifying never triggers an offer by itself.',
+    response: z.object({
+      income: IncomeProfile.nullable(),
+      consent: AaConsent.nullable(),
+      before: CreditLine,
+      after: CreditLine.nullable(),
+    }),
   }),
   creditLadder: endpoint({
     method: 'GET',
     path: '/v1/credit-ladder',
     auth: 'member',
-    summary: 'Earned Credit Ladder status (shown, never pushed)',
+    summary: 'Earned Credit Ladder status (shown as available, never pushed)',
     response: LadderStatus,
   }),
   rewards: endpoint({

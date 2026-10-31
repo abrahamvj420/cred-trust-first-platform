@@ -49,7 +49,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     phone: '9000000004',
     city: 'Hyderabad',
     age: 29,
-    tagline: 'Newer member, one partial bill after a wedding',
+    tagline: 'Newer member, one part-paid bill after his wedding',
     vpa: 'kabir@mockbank',
   },
   {
@@ -58,7 +58,7 @@ export const DEMO_PERSONAS: readonly DemoPersona[] = [
     phone: '9000000005',
     city: 'Pune',
     age: 27,
-    tagline: 'Under financial stress: high utilisation, partial payments',
+    tagline: 'Carrying a high balance, paying the minimum lately',
     vpa: 'rohan@mockbank',
   },
 ] as const;

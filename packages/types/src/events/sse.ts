@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { Id, IsoDateTime } from '../common';
-import { AuditEntry, CardTransaction, Claim, EngineDecision, HelpPlan, Loan, Offer, Permission } from '../domain';
+import { AuditEntry, CardTransaction, Claim, EngineDecision, HelpPlan, Loan, MemberAlert, Offer, Permission } from '../domain';
 import { PermissionScope, PersonaKey } from '../enums';
 
 /** Pushed from cred-api to the member app over server-sent events. */
@@ -21,6 +21,9 @@ export const MemberStreamEvent = z.discriminatedUnion('type', [
   ev('loan.updated', z.object({ loan: Loan })),
   ev('claim.updated', z.object({ claim: Claim })),
   ev('upi.updated', z.object({ paymentId: Id, status: z.string() })),
+  ev('alert.created', z.object({ alert: MemberAlert })),
+  /** Something the member's screens show changed (statement, ladder, income, holdings, cover, wellness, consent). */
+  ev('data.updated', z.object({ area: z.enum(['cards', 'ladder', 'income', 'holdings', 'insurance', 'wellness', 'consent', 'goals']) })),
   ev('demo.persona_switched', z.object({ personaKey: PersonaKey })),
   ev('heartbeat', z.object({})),
 ]);
@@ -33,6 +36,7 @@ export const AdminStreamEvent = z.discriminatedUnion('type', [
   ev('offer.updated', z.object({ memberId: Id, offer: Offer })),
   ev('audit.logged', z.object({ entry: AuditEntry })),
   ev('webhook.received', z.object({ eventId: Id, type: z.string(), signatureOk: z.boolean(), duplicate: z.boolean() })),
+  ev('sim.advanced', z.object({ from: z.string(), to: z.string() })),
   ev('heartbeat', z.object({})),
 ]);
 export type AdminStreamEvent = z.infer<typeof AdminStreamEvent>;

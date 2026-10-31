@@ -139,6 +139,7 @@ model CardStatement {
   minDuePaise   Int
   paidPaise     Int    @default(0)
   dueDate       String
+  interestPaise Int    @default(0)
 
   card     CreditCardAccount @relation(fields: [cardAccountId], references: [id], onDelete: Cascade)
   payments CardPayment[]
@@ -277,6 +278,9 @@ model LoanApplication {
   kfsAcknowledgedAt  DateTime?
   otp                String?
   verifiedIncomePaise Int?
+  incomeVerified     Boolean  @default(false)
+  /// Loan against holdings: what is pledged, as the lender recorded it
+  collateralJson     String?
   createdAt          DateTime @default(now())
 
   lender Lender       @relation(fields: [lenderId], references: [id])
@@ -290,6 +294,8 @@ model LoanAccount {
   disbursedAt   DateTime
   scheduleJson  String
   paidCount     Int      @default(0)
+  onTimeCount   Int      @default(0)
+  ratePaBps     Int      @default(0)
 
   application LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
@@ -313,8 +319,29 @@ model InsuranceProduct {
   ratesJson            String
   wellnessRewardMaxPct Float  @default(0)
 
-  insurer  Insurer  @relation(fields: [insurerId], references: [id])
+  insurer  Insurer          @relation(fields: [insurerId], references: [id])
   policies Policy[]
+  quotes   InsuranceQuote[]
+}
+
+/// An anonymous quote; becomes a proposal (with the person) only when the member accepts
+model InsuranceQuote {
+  id          String   @id @default(cuid())
+  productId   String
+  quoteJson   String
+  /// Filled in at proposal
+  personId    String?
+  insuredJson String?
+  otp         String?
+  /// quoted | proposed | issued
+  status      String   @default("quoted")
+  /// Groups quotes bought together (e.g. a base policy and a top-up)
+  proposalRef String?
+  clientRef   String
+  policyId    String?
+  createdAt   DateTime @default(now())
+
+  product InsuranceProduct @relation(fields: [productId], references: [id])
 }
 
 model Policy {
@@ -328,6 +355,10 @@ model Policy {
   membersCoveredJson String
   renewalDate        String?
   clientRef          String?
+  deductiblePaise    Int      @default(0)
+  vehicleJson        String?
+  /// Renewal date we last sent a renewal notice for
+  renewalNoticeFor   String?
 
   person Person           @relation(fields: [personId], references: [id], onDelete: Cascade)
   product InsuranceProduct @relation(fields: [productId], references: [id])

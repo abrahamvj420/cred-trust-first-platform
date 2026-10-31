@@ -1,4 +1,4 @@
-import type { CreditTier, FeatureKey } from '@cred/types';
+import type { CreditTier, FeatureKey, LoanKind } from '@cred/types';
 
 /**
  * Everything the engine may look at, assembled by cred-api from cred.db.
@@ -23,6 +23,7 @@ export interface MemberSnapshot {
   smartSavingsLastAskedOn: string | null;
   verifiedMonthlyIncomePaise: number | null;
   existingEmiPaise: number;
+  /** Tier, and the credit limit in force (ladder tier, raised by verified salary). */
   ladder: { tier: CreditTier; limitPaise: number };
   offers: {
     activeOfferId: string | null;
@@ -44,9 +45,11 @@ export interface CardPurchaseTrigger {
 export interface QuoteInput {
   quoteRef: string;
   lenderName: string;
-  kind: 'purchase_emi' | 'personal_loan';
+  kind: LoanKind;
   principalPaise: number;
   tenureMonths: number;
   ratePaBps: number;
   feeBps: number;
+  /** Card-Balance Switch: the rate steps down after on-time payments. */
+  rateStepDown?: { afterOnTimePayments: number; ratePaBps: number }[];
 }

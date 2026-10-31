@@ -10,6 +10,7 @@ import {
   type Endpoint,
   type EndpointResponse,
   type PersonaKey,
+  type Scenario,
 } from '@cred/types';
 import { signWebhook } from '@cred/types/signing';
 import { E2E } from './setup';
@@ -124,4 +125,32 @@ export function openStream(token: string) {
     } catch {}
   })();
   return { events, close: () => ctrl.abort(), waitFor: (type: string) => eventually(async () => events.find((e) => e.type === type), `SSE ${type}`) };
+}
+
+/** Wait until every partner webhook has been delivered and CRED's background engine runs have finished. */
+export async function settle(ms = 400): Promise<void> {
+  await eventually(async () => (await eco(ecosystemApi.sim.outbox)).pending === 0, 'webhook outbox to drain', 20_000);
+  await new Promise((r) => setTimeout(r, ms));
+  await eventually(async () => (await eco(ecosystemApi.sim.outbox)).pending === 0, 'webhook outbox to drain', 20_000);
+}
+
+export async function advance(months = 1) {
+  const r = await eco(ecosystemApi.sim.advance, { body: { months } });
+  await settle();
+  return r;
+}
+
+export const scenario = async (s: Scenario, personaKey: PersonaKey) => {
+  const r = await eco(ecosystemApi.sim.scenario, { body: { scenario: s, personaKey } });
+  await settle();
+  return r;
+};
+
+/** The member approves on the Account Aggregator's own page, sharing every account offered (or rejects). */
+export async function decideConsent(approvalUrl: string, decision: 'approve' | 'reject' = 'approve') {
+  const consentHandle = approvalUrl.split('/').at(-1)!;
+  const detail = await eco(ecosystemApi.aa.consent, { params: { consentHandle } });
+  const r = await eco(ecosystemApi.aa.decide, { params: { consentHandle }, body: { decision, accountRefs: detail.accounts.map((a) => a.accountRef) } });
+  await settle();
+  return { detail, ...r };
 }

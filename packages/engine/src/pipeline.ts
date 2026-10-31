@@ -5,6 +5,7 @@ import {
   type DecisionOutcome,
   type EngineCheck,
   type FeatureKey,
+  type InsuranceTerms,
   type LoanTerms,
   type OfferOption,
   type ReasonCode,
@@ -20,12 +21,17 @@ export interface OfferDraft {
   headline: string;
   subline: string;
   netBenefitPaise: number;
+  /** What the saving is measured against, e.g. "less than card interest". */
+  benefitLabel: string;
   comparison: BenefitComparison;
   options: OfferOption[];
-  terms: LoanTerms;
+  /** Terms of the recommended option. */
+  terms: LoanTerms | InsuranceTerms;
   trigger: { merchant: string; amountPaise: number } | null;
   /** Partner quote per acceptable option key. */
   quoteRefs: Record<string, string>;
+  /** Feature context cred-api needs on accept (holding pledged, people insured …). */
+  context?: Record<string, unknown>;
 }
 
 export interface HelpDraft {
@@ -113,6 +119,12 @@ export class Decision {
     this.signals = signals;
     this.checks.push({ check: 'stress', passed: false, reason: 'stress_signal', detail });
     return this.draft('help', ['stress_signal'], why, { help });
+  }
+
+  /** Shown as available (e.g. a credit tier), never pushed as an offer. */
+  available(check: EngineCheck, detail: string, why: string): EngineResult {
+    this.checks.push({ check, passed: true, reason: 'ok', detail });
+    return this.draft('available', ['ok'], why);
   }
 
   offer(netBenefitPaise: number, o: Omit<OfferDraft, 'status' | 'netBenefitPaise'>, why: string): EngineResult {

@@ -6,7 +6,22 @@
 export type RuleUnit = 'bps' | 'paise' | 'days' | 'count' | 'months' | 'multiple_bps';
 
 export interface RuleDefinition {
-  group: 'Rates' | 'Big-Spend signal' | 'Likely to carry' | 'Stress' | 'Affordability' | 'Offer control' | 'Permissions' | 'Key facts' | 'Rewards';
+  group:
+    | 'Rates'
+    | 'Big-Spend signal'
+    | 'Likely to carry'
+    | 'Stress'
+    | 'Affordability'
+    | 'Offer control'
+    | 'Permissions'
+    | 'Key facts'
+    | 'Rewards'
+    | 'Salary-verified credit'
+    | 'Wealth-backed liquidity'
+    | 'Card-balance switch'
+    | 'Protection'
+    | 'Wellness'
+    | 'Wealth management';
   label: string;
   unit: RuleUnit;
   value: number;
@@ -51,6 +66,39 @@ export const RULE_DEFINITIONS = {
 
   // Rewards
   rewardCoinsPer100Rupees: { group: 'Rewards', label: 'Coins per ₹100 paid on time', unit: 'count', value: 10, description: 'Coins earned for every ₹100 of card bill paid by the due date, in full or in part.' },
+
+  // Salary-verified credit (feature 5)
+  salaryMinMonths: { group: 'Salary-verified credit', label: 'Salary months needed', unit: 'count', value: 3, description: 'Distinct months with a salary credit needed to verify income.' },
+  salaryLimitMultipleBps: { group: 'Salary-verified credit', label: 'Limit as a multiple of monthly salary', unit: 'multiple_bps', value: 30000, description: 'With verified salary, the credit limit can rise to this multiple of monthly net salary (never below the ladder tier).' },
+  salaryLimitCapPaise: { group: 'Salary-verified credit', label: 'Highest salary-based limit', unit: 'paise', value: 5_00_000_00, description: 'Ceiling on the salary-based limit.' },
+  salaryRateDiscountBps: { group: 'Salary-verified credit', label: 'Rate discount with verified salary', unit: 'bps', value: 100, description: 'Partner lenders price verified-salary applicants this much lower.' },
+
+  // Wealth-backed liquidity (feature 2)
+  ltvEquityBps: { group: 'Wealth-backed liquidity', label: 'Most you can borrow: equity funds', unit: 'bps', value: 5000, description: 'Loan against equity or hybrid funds is capped at this share of their value.' },
+  ltvDebtBps: { group: 'Wealth-backed liquidity', label: 'Most you can borrow: debt funds', unit: 'bps', value: 7500, description: 'Loan against debt funds is capped at this share of their value.' },
+  ltvFixedDepositBps: { group: 'Wealth-backed liquidity', label: 'Most you can borrow: fixed deposits', unit: 'bps', value: 8500, description: 'Loan against a fixed deposit is capped at this share of its value.' },
+  ltvGoldBps: { group: 'Wealth-backed liquidity', label: 'Most you can borrow: gold', unit: 'bps', value: 6500, description: 'Loan against gold is capped at this share of its value (below the 75% regulatory maximum).' },
+  equityLtcgBps: { group: 'Wealth-backed liquidity', label: 'Equity long-term gains tax', unit: 'bps', value: 1250, description: 'Tax on gains from equity funds held over 12 months (and gold over 24 months).' },
+  equityStcgBps: { group: 'Wealth-backed liquidity', label: 'Equity short-term gains tax', unit: 'bps', value: 2000, description: 'Tax on gains from equity funds held 12 months or less.' },
+  equityLtcgExemptionPaise: { group: 'Wealth-backed liquidity', label: 'Yearly tax-free equity gains', unit: 'paise', value: 1_25_000_00, description: 'Long-term equity gains up to this amount a year are tax-free (assumed unused).' },
+  slabTaxBps: { group: 'Wealth-backed liquidity', label: 'Income tax slab assumed', unit: 'bps', value: 3000, description: 'Gains taxed at slab rate (debt funds, short-term gold) use this rate.' },
+  fdPrematurePenaltyBps: { group: 'Wealth-backed liquidity', label: 'FD early-withdrawal penalty', unit: 'bps', value: 100, description: 'Interest-rate cut a bank applies, for the time held, when an FD is broken early.' },
+
+  // Card-balance switch (feature 8)
+  switchMinBalancePaise: { group: 'Card-balance switch', label: 'Smallest balance to switch', unit: 'paise', value: 10_000_00, description: 'A balance carried after a part payment below this is not worth an EMI.' },
+  switchTenureMonths: { group: 'Card-balance switch', label: 'Switch tenure', unit: 'months', value: 6, description: 'Tenure used to compare carrying the balance with switching it to an EMI.' },
+
+  // Protection (features 4, 6)
+  healthCoverNeedPaise: { group: 'Protection', label: 'Health cover we suggest', unit: 'paise', value: 10_00_000_00, description: 'Health cover suggested for you, your spouse and children, counting employer cover.' },
+  maxPremiumToIncomeBps: { group: 'Protection', label: 'Max premiums to income', unit: 'bps', value: 1000, description: 'Suggested premiums must stay within this share of verified yearly income.' },
+
+  // Wellness (feature 4)
+  wellnessFullScore: { group: 'Wellness', label: 'Score for the full reward', unit: 'count', value: 80, description: 'Average weekly activity score that earns the full premium reward.' },
+  wellnessHalfScore: { group: 'Wellness', label: 'Score for half the reward', unit: 'count', value: 60, description: 'Average weekly activity score that earns half the reward.' },
+  wellnessQuarterScore: { group: 'Wellness', label: 'Score for a quarter of the reward', unit: 'count', value: 40, description: 'Average weekly activity score that earns a quarter of the reward.' },
+
+  // Wealth management (feature 7)
+  goalAssumedReturnBps: { group: 'Wealth management', label: 'Return assumed for goal plans', unit: 'bps', value: 1000, description: 'Yearly return assumed when planning a goal. Guidance only, not a promise.' },
 } as const satisfies Record<string, RuleDefinition>;
 
 export type RuleKey = keyof typeof RULE_DEFINITIONS;

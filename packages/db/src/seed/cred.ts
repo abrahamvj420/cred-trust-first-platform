@@ -1,9 +1,8 @@
 import { coinsForBillPayment, tierForStreak } from '@cred/engine';
 import { SIM_START_DATE } from '@cred/types';
 import type { CredDb } from '../cred';
-import { BANK, FUND_HOUSE } from './catalog';
+import { BANK, FUND_HOUSE, INSURER } from './catalog';
 import { folioFor, goldValuePaise, policyIdFor } from './ecosystem';
-import { INSURER } from './catalog';
 import { wipeAllTables } from './reset';
 import { addDays, addMonths, at } from './util';
 import { summariseActivityWeek } from './wearable';
@@ -60,6 +59,8 @@ export async function seedCred(db: CredDb, worlds: PersonaWorld[]): Promise<void
           paidPaise: s.paidPaise,
           dueDate: s.dueDate,
           status: s.status,
+          settledOn: s.payment ? s.dueDate : null,
+          ladderOutcome: s.payment ? (s.payment.kind === 'full' ? 'paid_in_full' : 'part_paid') : null,
           payments: s.payment
             ? { create: { externalRef: s.payment.id, kind: s.payment.kind, amountPaise: s.payment.amountPaise, paidAt: s.payment.paidAt, onTime: s.payment.onTime } }
             : undefined,
@@ -138,6 +139,7 @@ export async function seedCred(db: CredDb, worlds: PersonaWorld[]): Promise<void
           data: {
             memberId,
             kind: 'mutual_fund',
+            assetClass: scheme.category,
             name: scheme.name,
             provider: FUND_HOUSE.name,
             externalRef: folioFor(w),
@@ -157,6 +159,7 @@ export async function seedCred(db: CredDb, worlds: PersonaWorld[]): Promise<void
           data: {
             memberId,
             kind: 'fixed_deposit',
+            assetClass: 'fixed_deposit',
             name: `Fixed Deposit · matures ${fd.maturesOn}`,
             provider: BANK.name,
             externalRef: `fd_${f.key}_${i}`,
@@ -174,8 +177,10 @@ export async function seedCred(db: CredDb, worlds: PersonaWorld[]): Promise<void
           data: {
             memberId,
             kind: 'gold',
-            name: `Digital gold · ${f.goldGrams.grams} g`,
-            provider: 'Self-declared',
+            assetClass: 'gold',
+            source: 'self_declared',
+            name: `Gold · ${f.goldGrams.grams} g`,
+            provider: 'Declared by you',
             externalRef: `gold_${f.key}`,
             units: f.goldGrams.grams,
             valuePaise: goldValuePaise(f.goldGrams.grams),
@@ -193,8 +198,25 @@ export async function seedCred(db: CredDb, worlds: PersonaWorld[]): Promise<void
       await db.familyMember.create({ data: { memberId, name: fm.name, relation: fm.relation, age: fm.age } });
     }
 
+    // Policies CRED knows: bought through CRED, or read through Account Aggregator (employer cover included)
+    const insuranceConsentId = f.cred.insuranceLinked ? `aac_${f.key}_insurance` : null;
+    if (insuranceConsentId) {
+      await db.aaConsent.create({
+        data: {
+          memberId,
+          consentHandle: `aah_${f.key}_insurance`,
+          consentId: insuranceConsentId,
+          purpose: 'protection_review',
+          fiTypesJson: JSON.stringify(['INSURANCE_POLICIES']),
+          status: 'ACTIVE',
+          createdAt: at('2025-11-12'),
+          expiresAt: at(addMonths(SIM_START_DATE, 12)),
+          lastFetchedAt: at(addDays(SIM_START_DATE, -1)),
+        },
+      });
+    }
     for (const [i, pol] of (f.policies ?? []).entries()) {
-      if (!pol.viaCred) continue;
+      if (!pol.viaCred && !insuranceConsentId) continue;
       const product = INSURER.products.find((x) => x.id === pol.productId)!;
       await db.insurancePolicy.create({
         data: {
@@ -202,13 +224,14 @@ export async function seedCred(db: CredDb, worlds: PersonaWorld[]): Promise<void
           externalRef: policyIdFor(w, i),
           insurerName: INSURER.name,
           productName: product.name,
-          kind: 'health_family_floater',
+          kind: pol.isEmployer ? 'employer_group_health' : 'health_family_floater',
           coverPaise: pol.coverPaise,
           annualPremiumPaise: pol.annualPremiumPaise,
-          isEmployer: false,
+          isEmployer: pol.isEmployer,
+          employerName: pol.employerName ?? null,
           membersCoveredJson: JSON.stringify(pol.members),
           renewalDate: pol.renewalDate,
-          source: 'cred_purchase',
+          source: pol.viaCred ? 'cred_purchase' : 'aa',
         },
       });
     }

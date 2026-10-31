@@ -4,7 +4,7 @@ import { conflict, handlers, HttpError, notFound } from '@cred/service-kit';
 import { credApi, DEMO_PERSONAS, ecosystemApi, localUrl, type SessionClaims } from '@cred/types';
 import { randomBytes } from 'node:crypto';
 import type { Ctx } from './context';
-import { activeRules } from './engine-runner';
+import { activeRules, runBalanceSwitch } from './engine-runner';
 import { toCard, toPayment, toReward, toStatement, toTxn, toUpi } from './mappers';
 
 type H = ReturnType<typeof handlers>;
@@ -102,6 +102,13 @@ export function moneyHandlers(ctx: Ctx, h: H) {
       target: statement.id,
       details: { amountPaise: amount, kind, source: body.source, onTime: bank.onTime, remainingPaise: Math.max(0, statement.totalDuePaise - paid) },
     });
+    // Card-Balance Switch: a part payment leaves a balance that will carry. The payment itself is already done.
+    const left = Math.max(0, statement.totalDuePaise - paid);
+    if (left > 0) {
+      setImmediate(() => {
+        runBalanceSwitch(ctx, auth.memberId, { statementRef: statement.externalRef, remainingPaise: left, paidPaise: paid }).catch((e) => ctx.log.error({ err: e }, 'balance switch run failed'));
+      });
+    }
     return { payment: toPayment(payment), statement: toStatement(updatedStatement), card: toCard(updatedCard, updatedStatement), coinsEarned: coins };
   });
 

@@ -4,6 +4,123 @@ One section per milestone from M4 onward: what was built, decisions taken withou
 
 ---
 
+## M5 · The simulated clock and features 2–8
+
+Tag `m5`. Gate at tag:
+- `pnpm typecheck`: 11 packages.
+- `pnpm test`: 175 unit tests and the boundary checker.
+  - The engine has 118, up from 73, including two new fast-check properties at 3,000 runs each.
+- `pnpm test:e2e`: 46 cross-service tests (23 new).
+- `pnpm screenshots m5`: every screen passes for all five personas, with no serious or critical axe findings.
+
+### What was built
+
+**The M4 gap: statements close on the simulated clock**
+
+- `POST /sim/v1/clock/advance` (ecosystem-api, DEMO_MODE only) plays out each month, day by day, at each institution:
+  - salary, rent and spending in the bank account;
+  - everyday card spend (each charge posted to CRED, so the engine sees it);
+  - each persona's scripted bill habit;
+  - statement close on the billing day, with 3.5% a month plus GST on anything carried;
+  - EMI collection;
+  - weekly activity summaries;
+  - renewal notices and claim progress;
+  - fund NAVs, with SimAA telling CRED that new data is ready.
+- Every one of these reaches CRED by signed webhook, then `sim.clock.advanced`.
+- CRED then applies due dates. Each bill becomes *paid in full*, *part paid* or *missed* (overdue). That moves the **Earned Credit Ladder**: streaks grow, members move up tiers (with an alert), and a missed bill steps them down one.
+
+**Features, each from its real trigger, all through the engine**
+
+| # | Feature | Trigger | What happens | Blocked cases tested |
+|---|---|---|---|---|
+| 2 | Wealth-Backed Liquidity | Member taps *Sell some* on a fund, FD or gold | Sell (gains tax, FD penalty, returns given up) vs borrow (interest, fee, GST), in rupees. When borrowing costs less it's an offer: key facts mention the lien → Keystone Capital pledges the units → money to the bank. Selling stays one tap ("Sell anyway"). `market_fall` scenario: funds −15%, AA refresh, a calm market-fall alert, and the lender's collateral alert | Above the loan-to-value cap (no loan, sell); stressed (help); one active offer |
+| 3 | Earned Credit Ladder | Bills settling on the clock | Tier, streak, progress to the next tier ("1 more bill in full"), every tier's limit and rate, recent bills and whether they counted. The limit is shown as available, never pushed; unlocks are `available` decisions, not offers | Part payment resets the streak; missed bill steps down; hidden while clearing a balance |
+| 4 | Family Health Insurance + Wellness | Member adds parents or children, picks who to cover | The insurer quotes two ways: add them to the current floater (re-priced on the eldest) vs a separate floater, or one base policy vs base + super top-up. Cheaper one recommended; waiting periods on the quote and in the key facts; proposal with OTP → premium collected → policy issued by webhook. Health app link (Apple Health / Health Connect) only after an explicit choice; CRED gets weekly summaries; reward up to 10% of the premium | Stressed member (help); no saving between the two ways (no offer); premium above share of income |
+| 5 | Salary-Verified Credit | Member taps *Verify your salary* | SimAA consent page (choose the account) → CRED reads 6 months once, keeps only salary, employer and months → limit ₹3L→₹5L, rate −1% (lenders price verified salary lower). Recorded as `available`; no offer is started | Rejected at SimAA (nothing changes); withdraw deletes it |
+| 6 | Protection-Gap Engine + Claims Concierge | Insurer renewal notice; a new car (card booking + dealer's third-party-only policy) | Reads cover via AA including employer cover (flagged: ends if you change jobs), compares with ₹10L suggested, recommends the cheapest way to close it (super top-up vs second base; standalone own-damage vs comprehensive); nothing if covered. Claims filed through CRED; insurer status updates arrive by webhook with alerts and a timeline | Covered (nothing); policies not linked (we say so); claim above cover |
+| 7 | Wealth Management | Member links a portfolio via AA | Holdings, total, gain, mix, fees in rupees ("CRED earns none of it"), gold declared by the member, goals with a monthly plan net of fees. No offer or decision anywhere in it | Past goal date; linked holdings can't be deleted by hand |
+| 8 | Card-Balance Switch | Member pays part of a bill in CRED | After the payment goes through, the engine offers moving the rest to a 6-month EMI ("If you carry the remaining ₹37,166 …"), with pay-in-full ₹0 first. The lender clears the bill; the rate steps 17% → 16% → 15% after 2 and 4 on-time EMIs (re-priced by webhook, with an alert) | Rohan (help); a small remainder (no signal); never repeated for the same bill |
+
+**Screens** (M4 design system, supportive wording)
+
+- **Home:** an alerts bell with an unread count, and a *Your money* row (Credit · Protect · Grow).
+- **Credit:** the ladder, and salary verification.
+- **Wealth:**
+  - the portfolio and the link explainer;
+  - holding detail;
+  - *Sell some*, then *Sell or borrow?*;
+  - adding gold;
+  - goals.
+- **Protect:**
+  - the cover check;
+  - policies, with employer cover flagged;
+  - family, with the floater comparison;
+  - wellness;
+  - claims: the list, filing a claim, and the timeline.
+- **Alerts.**
+- **The return page from the Account Aggregator.**
+- **Generalised to all the new features:** the offer page, key facts (loan, lien or insurance), the loan detail with the rate step-down, and the offer card.
+- **Ecosystem:** SimAA's consent page, with nothing pre-ticked and Approve and Reject of equal weight.
+
+### Decisions I made on my own
+
+| Decision | Why |
+|---|---|
+| **Ladder rules:** a part payment resets the streak but keeps the tier; a missed bill steps down one tier | Deriving the tier only from the streak would drop a Gold member to Starter for one short month. That's harsh and would discourage part payments over missed ones. |
+| **Tier unlocks and salary verification are recorded as a new outcome, `available`** | Both are decisions worth logging, but neither is an offer. Using `offer` would break "never pushed"; using `blocked` would be misleading. |
+| **Insurance "net benefit" = the saving against the other way to get the same cover** | Cover itself can't be priced as a rupee gain honestly. Comparing two real insurer quotes keeps "net benefit or no offer" meaningful. The ₹0 "keep things as they are" option always comes first. |
+| **New vehicle means motor cover:** the dealer sells third-party only; the gap is own-damage, closed by standalone own-damage or comprehensive | A gap check about a car should be about the car. It also shows "nothing if covered" for health at the same time. |
+| **Gap check needs policies linked through AA** (new permission `insurance_data`); without it CRED says so and suggests nothing | CRED can't honestly claim a gap it can't see. Priya is seeded with this consent. |
+| **Insurance and health premiums show GST ₹0** (individual health cover is GST-exempt from Sept 2025); motor shows 18% | Matches current rules. The key facts state it. |
+| **Lender quotes carry one anonymous attribute, `incomeVerified`** (−1%) | Needed for "better rate" to be real. It's an attribute, not identity; member details still go only on accept. |
+| **Loans against holdings: Keystone Capital at 10.5%, fee 0.5%**. CRED's loan-to-value caps are equity 50%, debt 75%, FD 85% and gold 65%; the lender's own caps are higher | "Conservative share of value". Two independent checks, like real life. |
+| **Sell-side tax assumptions:** equity long-term gains at 12.5% after ₹1.25L a year, short-term at 20%; debt and short-term gold at a 30% slab; FD penalty 1% for the time held. All are rule settings, stated on screen | Real 2024+ rules, simplified (e.g. the exemption is assumed unused). |
+| **Scripted bill habits pay only if the member didn't pay that cycle; short of cash they pay what they can** | Otherwise the clock would undo the member's own part payment (feature 8), and Kabir's flight month would look like "minimum only". |
+| **Kabir's fixture:** the 60% month moved one cycle earlier | So a new part payment isn't read as a pattern (2 in 3 statements is a stress signal), and the switch can be shown. |
+| **Member decision feed hides everyday purchases** (Big-Spend `no_signal`); admin keeps them | The clock now posts card spend every month; the member's "why" feed would drown in "looks like everyday spending". |
+| **Market-fall alert is measured on prices (NAV before vs after), not the total** | A sale would otherwise look like a market fall. |
+| **Services close each connection after responding** (service-kit) | Found by e2e. On Node 26, a keep-alive socket that answers while the process has outgoing fetches in flight parks the next request until the server's 30 s connection sweep. I proved it by shrinking the sweep to 2 s (the stall became 2.6 s). The fix is general and costs nothing on localhost; SSE is unaffected. The webhook outbox now also always reads response bodies. |
+| **Proposals can cover several quotes with one OTP**, and can replace an existing floater | Base + top-up is bought together. "Add parents to my floater" replaces the old policy. |
+| **Gold is valued at a public price constant**; gold "sales" update the member's own declaration | AA doesn't carry gold, and CRED can't sell gold the member holds. |
+
+### Deviations from plan
+
+- **Scenarios that are member actions are refused by ecosystem-api with 422** (`partial_bill_payment`, `fund_sale`). Those happen in the CRED app; the M6 control room can drive them through the app or cred-api.
+- **The health-app page** (raw steps stay there) and **the insurer and fund house portals** are API-only; their pages are M7 ecosystem polish. The privacy point is shown in CRED: "receives only / never".
+- **The wellness reward is shown and quoted at renewal**, not yet applied by the insurer to the renewal premium.
+
+### Known gaps
+
+- Claims don't model *documents pending*. The insurer moves filed → under review → approved → paid.
+- No FD or gold loan e2e. Loans against FDs and gold are built and unit-tested; e2e covers funds.
+- No exit loads in the sell comparison (AA mutual fund data doesn't carry them; seeded holdings are past the exit-load period).
+- No early repayment or part-prepayment of loans, and no top-up of pledged holdings after a collateral alert. The alert suggests both.
+- One card per persona still.
+- The ladder shows recent bills only; there's no tier history.
+
+### Screenshots (`docs/screenshots/m5/`)
+
+All M4 screenshots are regenerated in the same folder. New in M5:
+
+| | | |
+|---|---|---|
+| `m5-01-credit-ladder` | `m5-02-credit-hidden` (Rohan) | `m5-03-salary-explainer` |
+| `m5-04-credit-gold` | `m5-05-alerts-ladder` | `m5-06-home-switch-offer` |
+| `m5-07-switch-compare` | `m5-08-switch-key-facts` | `m5-09-switch-rate-stepped` |
+| `m5-10-wealth` | `m5-11-wealth-empty` | `m5-12-holding` |
+| `m5-13-sell-start` | `m5-14-sell-vs-borrow` | `m5-15-laf-compare` |
+| `m5-16-laf-key-facts` | `m5-17-alerts-market-fall` | `m5-18-sell-only` |
+| `m5-20-protect` | `m5-21-protect-unlinked` | `m5-22-floater-compare` |
+| `m5-23-insurance-key-facts` | `m5-24-policy-issued` | `m5-25-wellness` |
+| `m5-26-wellness-connect` | `m5-27-gap-renewal` | `m5-28-gap-topup` |
+| `m5-29-home-motor-gap` | `m5-30-aa-consent` (ecosystem) | `m5-31-salary-verified` |
+| `m5-32-credit-salary` | `m5-33-wealth-link` | `m5-34-gold` |
+| `m5-35-goal-plan` | `m5-36-wealth-linked` | `m5-37-claim-new` |
+| `m5-38-claim-timeline` | `m5-39-home-help-switch` | `m5-40-alerts-empty` |
+| `m5-41-decisions` | | |
+
+---
+
 ## M4 · CRED app shell, fully polished
 
 Tag `m4`. Gate at tag: `pnpm typecheck` (11 packages), `pnpm test` (130 unit tests and the boundary checker), `pnpm test:e2e` (23 cross-service tests), and `pnpm screenshots m4`, which passes on every screen for all five personas with no serious or critical axe findings.

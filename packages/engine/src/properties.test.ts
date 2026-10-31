@@ -4,6 +4,8 @@ import type { TriggerOrigin } from '@cred/types';
 import { stressSignals } from './checks/stress';
 import { LADDER_TIERS } from './constants';
 import { evaluateBigSpend } from './features/big-spend';
+import { evaluateBalanceSwitch } from './features/balance-switch';
+import { evaluateSellVsBorrow, maxBorrowPaise, sellVsBorrowCosts, type HoldingInput } from './features/wealth-liquidity';
 import { emiCost } from './finance';
 import { BANNED_MEMBER_WORDS, memberFacingStrings } from './member-copy';
 import { DEFAULT_RULES } from './rules';
@@ -128,6 +130,8 @@ describe('engine properties (fast-check)', () => {
         const cap = x.s.verifiedMonthlyIncomePaise === null ? null : Math.round((x.s.verifiedMonthlyIncomePaise * DEFAULT_RULES.maxEmiToIncomeBps) / 10_000);
         for (const o of d.offer.options.filter((o) => o.acceptable)) {
           const t = o.terms!;
+          expect(t.kind).toBe('loan');
+          if (t.kind !== 'loan') return;
           expect(t.principalPaise).toBeLessThanOrEqual(x.s.ladder.limitPaise);
           expect(t.principalPaise).toBe(x.amount);
           expect(t.emiPaise).toBe(emiCost(t.principalPaise, t.tenureMonths, t.ratePaBps, o.lines.find((l) => l.kind === 'fee') ? Math.round((t.processingFeePaise * 10_000) / t.principalPaise) : 0).emiPaise);
@@ -162,6 +166,99 @@ describe('engine properties (fast-check)', () => {
           expect(last.passed).toBe(false);
           expect(d.reasons).toEqual([last.reason]);
         }
+      }),
+      RUNS,
+    );
+  });
+});
+
+// ── M5: the same rules hold for every credit feature ─────────────────────────
+
+const holding = fc.record({
+  assetClass: fc.constantFrom('equity' as const, 'debt' as const, 'hybrid' as const, 'gold' as const, 'fixed_deposit' as const),
+  value: rupees(10_000, 20_00_000),
+  costShare: fc.integer({ min: 30, max: 150 }),
+  heldDays: fc.integer({ min: 10, max: 2_000 }),
+  expectedReturnBps: fc.integer({ min: 300, max: 1500 }),
+  pledgedShare: fc.integer({ min: 0, max: 60 }),
+});
+
+const liquidity = fc
+  .record({ s: snapshot, h: holding, needShare: fc.integer({ min: 1, max: 100 }), months: fc.integer({ min: 1, max: 36 }), rate: fc.integer({ min: 0, max: 3000 }), fee: fc.integer({ min: 0, max: 300 }) })
+  .map((x) => {
+    const kind = x.h.assetClass === 'fixed_deposit' ? ('fixed_deposit' as const) : x.h.assetClass === 'gold' ? ('gold' as const) : ('mutual_fund' as const);
+    const h: HoldingInput = {
+      id: 'h',
+      name: 'Holding',
+      kind,
+      assetClass: x.h.assetClass,
+      valuePaise: x.h.value,
+      costPaise: Math.round((x.h.value * x.h.costShare) / 100),
+      acquiredAt: new Date(Date.parse('2026-11-02') - x.h.heldDays * 86_400_000).toISOString().slice(0, 10),
+      expectedReturnBps: x.h.expectedReturnBps,
+      pledgedPaise: Math.round((x.h.value * x.h.pledgedShare) / 100),
+    };
+    const amountPaise = Math.max(100, Math.round((x.h.value * x.needShare) / 100 / 100) * 100);
+    return { ...x, req: { holding: h, amountPaise, months: x.months } };
+  });
+
+function runLiquidity(x: { s: MemberSnapshot; req: { holding: HoldingInput; amountPaise: number; months: number }; rate: number; fee: number }) {
+  let r = evaluateSellVsBorrow(x.s, x.req, null);
+  if (r.kind === 'needs_quotes') {
+    r = evaluateSellVsBorrow(x.s, x.req, { quoteRef: 'q', lenderName: 'Keystone Capital', kind: 'loan_against_funds', principalPaise: r.principalPaise, tenureMonths: r.tenureMonths, ratePaBps: x.rate, feeBps: x.fee });
+  }
+  if (r.kind !== 'decision') throw new Error('asked for quotes twice');
+  return r.decision;
+}
+
+const switchCase = fc
+  .record({ s: snapshot, remaining: rupees(1_000, 4_00_000), rate: fc.integer({ min: 0, max: 6000 }), fee: fc.integer({ min: 0, max: 300 }) })
+  .map((x) => ({ ...x, trigger: { statementRef: 'st', remainingPaise: x.remaining, paidPaise: 1_000_00 } }));
+
+function runSwitch(x: { s: MemberSnapshot; trigger: { statementRef: string; remainingPaise: number; paidPaise: number }; rate: number; fee: number }) {
+  let r = evaluateBalanceSwitch(x.s, x.trigger, null);
+  if (r.kind === 'needs_quotes') {
+    r = evaluateBalanceSwitch(x.s, x.trigger, [{ quoteRef: 'q', lenderName: 'Northstar Finance', kind: 'balance_switch_emi', principalPaise: r.principalPaise, tenureMonths: r.tenureMonths, ratePaBps: x.rate, feeBps: x.fee, rateStepDown: [{ afterOnTimePayments: 2, ratePaBps: Math.max(0, x.rate - 100) }] }]);
+  }
+  if (r.kind !== 'decision') throw new Error('asked for quotes twice');
+  return r.decision;
+}
+
+describe('engine properties for M5 credit features (fast-check)', () => {
+  it('sell vs borrow: an offer only when borrowing costs less, never above the loan-to-value cap, never to a stressed member', () => {
+    fc.assert(
+      fc.property(liquidity, (x) => {
+        const d = runLiquidity(x);
+        for (const t of memberFacingStrings(d)) expect(t).not.toMatch(BANNED_MEMBER_WORDS);
+        if (!d.offer) return;
+        expect(stressSignals(x.s)).toEqual([]);
+        expect(d.netBenefitPaise!).toBeGreaterThan(0);
+        const costs = sellVsBorrowCosts(x.req, x.s.today, { quoteRef: 'q', lenderName: 'K', kind: 'loan_against_funds', principalPaise: x.req.amountPaise, tenureMonths: x.months, ratePaBps: x.rate, feeBps: x.fee });
+        expect(costs.borrow!.totalCostPaise).toBeLessThan(costs.sell.totalCostPaise);
+        expect(x.req.amountPaise).toBeLessThanOrEqual(maxBorrowPaise(x.req.holding));
+        const t = d.offer.terms;
+        if (t.kind !== 'loan') throw new Error('expected loan terms');
+        const cap = x.s.verifiedMonthlyIncomePaise === null ? null : Math.round((x.s.verifiedMonthlyIncomePaise * DEFAULT_RULES.maxEmiToIncomeBps) / 10_000);
+        if (cap !== null) expect(t.emiPaise + x.s.existingEmiPaise).toBeLessThanOrEqual(cap);
+      }),
+      RUNS,
+    );
+  });
+
+  it('card-balance switch: proactive only with Smart Savings, a saving vs the card, within affordability, never to a stressed member', () => {
+    fc.assert(
+      fc.property(switchCase, (x) => {
+        const d = runSwitch(x);
+        for (const t of memberFacingStrings(d)) expect(t).not.toMatch(BANNED_MEMBER_WORDS);
+        if (!d.offer) return;
+        expect(stressSignals(x.s)).toEqual([]);
+        if (x.s.smartSavings !== 'granted') expect(d.offer.status).toBe('awaiting_permission');
+        expect(d.netBenefitPaise!).toBeGreaterThan(0);
+        expect(d.offer.options[0]).toMatchObject({ key: 'pay_in_full', totalCostPaise: 0 });
+        const card = d.offer.options.find((o) => o.key === 'card_revolve')!;
+        expect(d.offer.options.find((o) => o.recommended)!.totalCostPaise).toBeLessThan(card.totalCostPaise);
+        expect(x.remaining).toBeLessThanOrEqual(x.s.ladder.limitPaise);
+        expect(d.offer.headline).toMatch(/^If you carry the remaining/);
       }),
       RUNS,
     );

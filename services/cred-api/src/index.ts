@@ -4,6 +4,9 @@ import { createService, handlers, HttpError, isDemoMode, loadRootEnv, notFound, 
 import { credApi, DEMO_PERSONAS, PersonaKey, WEBHOOK_HEADERS, type Member } from '@cred/types';
 import { verifyWebhook } from '@cred/types/signing';
 import { adminHandlers } from './admin';
+import { creditHandlers } from './credit';
+import { protectHandlers } from './protect';
+import { wealthHandlers } from './wealth';
 import { createCtx } from './context';
 import { Hub } from './hub';
 import { memberHandlers } from './member';
@@ -79,6 +82,9 @@ const h = handlers()
 memberHandlers(ctx, h);
 moneyHandlers(ctx, h);
 adminHandlers(ctx, h);
+creditHandlers(ctx, h);
+wealthHandlers(ctx, h);
+protectHandlers(ctx, h);
 
 svc.implement(credApi, h.map);
 

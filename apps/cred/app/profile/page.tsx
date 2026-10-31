@@ -41,6 +41,9 @@ export default function Profile() {
             <ListRow href="/profile/data" leading={<Avatar icon="list" />} title="Your data and decisions" subtitle="Every suggestion we considered, and why" />
             <ListRow href="/permissions" leading={<Avatar icon="shield" />} title="Permissions" subtitle="What you’ve allowed. Turn off in one tap" />
             <ListRow href="/loans" leading={<Avatar icon="loan" />} title="Your loans" subtitle="EMIs and schedules" />
+            <ListRow href="/credit" leading={<Avatar icon="trend" />} title="Your credit" subtitle="Credit ladder and verified salary" />
+            <ListRow href="/protect" leading={<Avatar icon="shield" />} title="Protect" subtitle="Cover, family, wellness and claims" />
+            <ListRow href="/wealth" leading={<Avatar icon="chart" />} title="Your money" subtitle="Investments and goals" />
           </List>
           <Button
             variant="secondary"

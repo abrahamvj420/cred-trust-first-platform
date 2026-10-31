@@ -1,6 +1,6 @@
 'use client';
 
-import { credApi } from '@cred/types';
+import { AcceptOption, credApi } from '@cred/types';
 import { Button, Card, ErrorState, Field, Icon, LoadingScreen, Notice, Spinner } from '@cred/ui';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
@@ -12,13 +12,14 @@ type Step = 'review' | 'otp' | 'waiting';
 
 function KeyFacts() {
   const { id } = useParams<{ id: string }>();
-  const option = useSearchParams().get('option') === 'loan' ? 'loan' : 'emi';
+  const option = AcceptOption.catch('emi').parse(useSearchParams().get('option'));
+  const insurance = option === 'policy' || option === 'policy_alt';
   const router = useRouter();
   const kfs = useApi(credApi.products.keyFacts, { params: { offerId: id }, query: { option } }, { live: false });
   const { subscribe } = useLive();
   const [read, setRead] = useState(false); // never pre-ticked
   const [step, setStep] = useState<Step>('review');
-  const [otpInfo, setOtpInfo] = useState<{ sentTo: string; demoOtp: string } | null>(null);
+  const [otpInfo, setOtpInfo] = useState<{ sentTo: string; demoOtp: string; purpose: string } | null>(null);
   const [otp, setOtp] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -26,6 +27,11 @@ function KeyFacts() {
   // When the lender's disbursal webhook lands, cred-api pushes loan.updated.
   useEffect(() => {
     if (step !== 'waiting') return;
+    if (insurance) {
+      // The insurer issues the policy and tells cred-api by webhook; the Protect screen shows it live
+      const t = setTimeout(() => router.push('/protect?issued=1'), 1200);
+      return () => clearTimeout(t);
+    }
     const go = async () => {
       const loan = (await api(credApi.products.loans)).loans.find((l) => l.offerId === id);
       if (loan?.status === 'disbursed') router.push(`/loans/${loan.id}`);
@@ -37,7 +43,7 @@ function KeyFacts() {
       off();
       clearInterval(t);
     };
-  }, [step, id, router, subscribe]);
+  }, [step, id, router, subscribe, insurance]);
 
   async function accept() {
     setBusy(true);
@@ -77,7 +83,7 @@ function KeyFacts() {
       </div>
     ) : step === 'otp' ? (
       <Button block disabled={otp.length !== 6} loading={busy} onClick={confirm}>
-        Confirm and sign
+        {insurance ? 'Confirm and pay premium' : 'Confirm and sign'}
       </Button>
     ) : null;
 
@@ -89,7 +95,17 @@ function KeyFacts() {
         <LoadingScreen label="Loading key facts" />
       ) : (
         <>
-          <p className="text-callout text-muted">Read these before you accept. They’re the full cost, including fees and GST.</p>
+          <p className="text-callout text-muted">Read these before you accept. They’re the full cost, including {insurance ? 'tax and waiting periods' : 'fees and GST'}.</p>
+          {k.highlights.length ? (
+            <Card className="flex flex-col gap-2">
+              {k.highlights.map((h) => (
+                <p key={h} className="flex gap-3 text-callout">
+                  <Icon name="info" size={18} className="mt-0.5 shrink-0 text-accent" />
+                  {h}
+                </p>
+              ))}
+            </Card>
+          ) : null}
           <Card className="p-0">
             <dl className="divide-y divide-border">
               {k.items.map((i) => (
@@ -105,14 +121,16 @@ function KeyFacts() {
           {step === 'review' ? (
             <label className="flex min-h-12 cursor-pointer items-start gap-3 rounded-md border border-border bg-surface p-4 text-callout">
               <input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-current text-accent" />
-              I’ve read the key facts, including the APR, fees and the {k.coolingOffDays}-day cooling-off period.
+              {insurance
+                ? `I’ve read the key facts, including the waiting periods${k.coolingOffDays ? ` and the ${k.coolingOffDays}-day free look` : ''}.`
+                : `I’ve read the key facts, including the APR, fees and the ${k.coolingOffDays}-day cooling-off period.`}
             </label>
           ) : null}
 
           {step === 'otp' && otpInfo ? (
             <Card className="flex flex-col gap-3">
               <Field
-                label={`Enter the 6-digit OTP ${k.lenderOrInsurer} sent to ${otpInfo.sentTo}`}
+                label={`${otpInfo.purpose}: enter the 6-digit OTP ${k.lenderOrInsurer} sent to ${otpInfo.sentTo}`}
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 maxLength={6}
@@ -127,8 +145,8 @@ function KeyFacts() {
 
           {step === 'waiting' ? (
             <Card className="flex items-center gap-3">
-              <Spinner label="Waiting for the lender" />
-              <p className="text-callout">Signed. {k.lenderOrInsurer} is approving and setting up your EMIs…</p>
+              <Spinner label={insurance ? 'Waiting for the insurer' : 'Waiting for the lender'} />
+              <p className="text-callout">{insurance ? `Confirmed. ${k.lenderOrInsurer} is issuing your policy…` : `Signed. ${k.lenderOrInsurer} is approving and setting up your EMIs…`}</p>
             </Card>
           ) : null}
           {error ? <Notice>{error}</Notice> : null}

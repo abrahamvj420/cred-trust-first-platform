@@ -48,6 +48,26 @@ model Member {
   events            DomainEvent[]
   audit             AuditLog[]
   rewards           RewardEntry[]
+  alerts            MemberAlert[]
+}
+
+/// Information for the member (market moves, claim updates, tier changes). Never an offer.
+model MemberAlert {
+  id        String    @id @default(cuid())
+  memberId  String
+  kind      String
+  title     String
+  body      String
+  href      String?
+  /// e.g. the partner event that raised it; unique so a re-sent event never doubles an alert
+  sourceRef String?   @unique
+  readAt    DateTime?
+  simDate   String    @default("")
+  createdAt DateTime  @default(now())
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId, createdAt])
 }
 
 /// Coins ledger: balance is the sum of entries
@@ -113,6 +133,11 @@ model Statement {
   dueDate       String
   /// open | paid | partial | unpaid | overdue
   status        String @default("open")
+  interestPaise Int    @default(0)
+  /// Sim date the due date was applied (null = not yet due)
+  settledOn     String?
+  /// paid_in_full | part_paid | missed, set when the due date passes (credit ladder)
+  ladderOutcome String?
 
   card     Card          @relation(fields: [cardId], references: [id], onDelete: Cascade)
   payments BillPayment[]
@@ -179,6 +204,8 @@ model AaConsent {
   fiTypesJson   String
   /// PENDING | ACTIVE | REJECTED | REVOKED | EXPIRED
   status        String
+  /// Where the member goes back to in the app after the AA page
+  returnTo      String    @default("/")
   createdAt     DateTime  @default(now())
   expiresAt     DateTime?
   lastFetchedAt DateTime?
@@ -208,6 +235,12 @@ model Holding {
   externalRef       String
   schemeCode        String?
   units             Float?
+  /// Units pledged to a lender (loan against holdings)
+  pledgedUnits      Float   @default(0)
+  /// equity | debt | hybrid | gold | fixed_deposit
+  assetClass        String  @default("equity")
+  /// aa | self_declared
+  source            String  @default("aa")
   valuePaise        Int
   costPaise         Int
   acquiredAt        String
@@ -227,6 +260,9 @@ model SellIntent {
   holdingId         String
   amountNeededPaise Int
   months            Int
+  decisionId        String?
+  offerId           String?
+  redemptionRef     String?
   comparisonJson    String
   /// open | sold | borrowed | abandoned
   status            String   @default("open")
@@ -242,6 +278,7 @@ model Goal {
   name             String
   targetPaise      Int
   targetDate       String
+  currentPaise     Int      @default(0)
   assumedReturnBps Int
   createdAt        DateTime @default(now())
 
@@ -268,6 +305,7 @@ model InsurancePolicy {
   /// health_individual | health_family_floater | employer_group_health | term_life
   kind                String
   coverPaise          Int
+  deductiblePaise     Int     @default(0)
   annualPremiumPaise  Int
   isEmployer          Boolean @default(false)
   employerName        String?
@@ -275,6 +313,13 @@ model InsurancePolicy {
   renewalDate         String?
   /// aa | cred_purchase
   source              String
+  vehicleJson         String?
+  /// The offer it was bought through (cred_purchase)
+  offerId             String?
+  /// Insurer proposal while awaiting OTP confirmation
+  proposalRef         String?  @unique
+  /// active | proposed
+  status              String  @default("active")
 
   member Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
   claims Claim[]
@@ -362,6 +407,10 @@ model Offer {
   headline        String
   subline         String
   netBenefitPaise Int
+  /// What the saving is measured against, e.g. "less than card interest"
+  benefitLabel    String    @default("")
+  /// Feature context needed on accept (holding pledged, people insured, sell intent …)
+  contextJson     String    @default("{}")
   comparisonJson  String
   optionsJson     String    @default("[]")
   termsJson       String
@@ -399,6 +448,8 @@ model Loan {
   tenureMonths      Int
   emiPaise          Int
   processingFeePaise Int
+  /// Loan against holdings: what is pledged
+  collateralJson    String?
   /// applied | approved | declined | disbursed | closed
   status            String
   createdAt         DateTime @default(now())
