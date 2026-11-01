@@ -83,6 +83,16 @@ model PartnerCall {
   @@index([at])
 }
 
+/// CRED staff who can sign in to the console (demo account seeded)
+model StaffUser {
+  id           String   @id
+  email        String   @unique
+  name         String
+  /// scrypt: salt:hash (hex)
+  passwordHash String
+  createdAt    DateTime @default(now())
+}
+
 /// Rule settings changed from admin; anything absent uses the engine default
 model RuleSetting {
   key       String   @id

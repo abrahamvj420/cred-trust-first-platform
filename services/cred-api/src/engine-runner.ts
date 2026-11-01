@@ -124,7 +124,8 @@ export async function runSellVsBorrow(ctx: Ctx, memberId: string, h: HoldingRow,
     const ltv = loanToValueBps(req.holding.assetClass, rules) / 10_000;
     const perUnit = h.units ? h.valuePaise / h.units : null;
     const pledgeValue = Math.ceil(amountPaise / ltv);
-    const units = perUnit ? Math.min(h.units! - h.pledgedUnits, Number((pledgeValue / perUnit).toFixed(3))) : null;
+    // Round units up (to 3 decimals) so the pledge never falls a fraction short of the lender's cap
+    const units = perUnit ? Math.min(h.units! - h.pledgedUnits, Math.ceil((pledgeValue / perUnit) * 1000) / 1000) : null;
     decision.offer.context = {
       ...decision.offer.context,
       intentId,

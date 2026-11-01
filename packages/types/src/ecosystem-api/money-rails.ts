@@ -222,6 +222,18 @@ export const upiEndpoints = {
     params: z.object({ upiTxnRef: Id }),
     response: UpiPinChallenge,
   }),
+  customerPayments: endpoint({
+    method: 'GET',
+    path: '/upi/v1/customers/:customerRef/payments',
+    auth: 'page',
+    summary: 'UPI app view: the person’s UPI IDs and recent payments',
+    params: z.object({ customerRef: Id }),
+    response: z.object({
+      customerName: z.string(),
+      vpas: z.array(z.string()),
+      payments: z.array(z.object({ ref: Id, direction: z.enum(['sent', 'received']), counterparty: z.string(), amountPaise: PositivePaise, status: UpiStatus, via: z.string(), at: IsoDateTime, rrn: z.string().nullable() })),
+    }),
+  }),
   submitPin: endpoint({
     method: 'POST',
     path: '/upi/v1/payments/:upiTxnRef/pin',
@@ -337,6 +349,18 @@ export const aaEndpoints = {
     params: z.object({ consentHandle: Id }),
     body: z.object({ decision: z.enum(['approve', 'reject']), accountRefs: z.array(Id) }),
     response: z.object({ status: AaConsentStatus, redirectUrl: z.url() }),
+  }),
+  customerConsents: endpoint({
+    method: 'GET',
+    path: '/aa/v1/customers/:customerRef/consents',
+    auth: 'page',
+    summary: 'SimAA dashboard: every consent the person gave, to whom, for what, and its status',
+    params: z.object({ customerRef: Id }),
+    response: z.object({
+      customerName: z.string(),
+      handle: z.string(),
+      consents: z.array(z.object({ consentHandle: Id, fiuName: z.string(), purposeText: z.string(), fiTypes: z.array(AaFiType), status: AaConsentStatus, createdAt: IsoDateTime, decidedAt: IsoDateTime.nullable() })),
+    }),
   }),
   revoke: endpoint({
     method: 'DELETE',

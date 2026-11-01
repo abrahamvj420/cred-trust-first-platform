@@ -23,8 +23,8 @@ export default function Overview() {
 
           <Section title="Offer funnel by feature">
             <DataTable
-              head={['Feature', 'Decisions', 'Offers', 'Awaiting permission', 'Shown', 'Accepted', 'Dismissed', 'Expired', 'Help', 'Available', 'Not offered, by reason']}
-              align={['left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'left']}
+              head={['Feature', 'Decisions', 'Offers', 'Awaiting permission', 'Shown', 'Accepted', 'Now overdue', 'Dismissed', 'Expired', 'Help', 'Available', 'Not offered, by reason']}
+              align={['left', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'right', 'left']}
               rows={o.funnel.map((f) => [
                 <span key="f" className="capitalize">
                   {feature(f.feature)}
@@ -35,6 +35,9 @@ export default function Overview() {
                 f.shown,
                 <span key="a" className={f.accepted ? 'text-positive' : ''}>
                   {f.accepted}
+                </span>,
+                <span key="o" className={f.acceptedNowOverdue ? 'text-warning' : ''}>
+                  {f.acceptedNowOverdue}
                 </span>,
                 f.dismissed,
                 f.expired,
@@ -66,7 +69,9 @@ export default function Overview() {
                   ['Overdue EMIs', <span key="o">{o.defaults.overdueInstalments} · <Money paise={o.defaults.overduePaise} /></span>],
                   ['Loans 90+ days past due (default)', o.defaults.loansOver90Days],
                   ['Default rate', pct(o.defaults.defaultRateBps)],
+                  ['EMIs bounced in the last month', <span key="b" className={o.defaults.bouncesThisMonth ? 'text-warning' : ''}>{o.defaults.bouncesThisMonth}</span>],
                   ['Card bills missed (below minimum or late)', o.defaults.cardBillsMissed],
+                  ['Members on a repayment plan (no new credit)', o.defaults.membersOnRepaymentPlans],
                   ['Members showing strain (got help, not credit)', o.defaults.membersShowingStrain],
                 ]}
               />

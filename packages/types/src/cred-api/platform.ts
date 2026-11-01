@@ -107,6 +107,8 @@ export const FunnelRow = z.object({
   awaitingPermission: z.number().int(),
   shown: z.number().int(),
   accepted: z.number().int(),
+  /** Accepted offers whose loan now has a bounced EMI. */
+  acceptedNowOverdue: z.number().int(),
   dismissed: z.number().int(),
   expired: z.number().int(),
   help: z.number().int(),
@@ -137,6 +139,8 @@ export const AdminOverview = z.object({
     loansOver90Days: z.number().int(),
     defaultRateBps: z.number().int(),
     cardBillsMissed: z.number().int(),
+    bouncesThisMonth: z.number().int(),
+    membersOnRepaymentPlans: z.number().int(),
     membersShowingStrain: z.number().int(),
   }),
 });
@@ -154,7 +158,25 @@ const MemberFilter = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(100),
 });
 
+export const StaffSession = z.object({ staffId: Id, name: z.string(), email: z.string(), issuedAt: IsoDateTime });
+export type StaffSession = z.infer<typeof StaffSession>;
+
 export const adminEndpoints = {
+  login: endpoint({
+    method: 'POST',
+    path: '/admin/v1/login',
+    auth: 'none',
+    summary: 'Staff sign-in to the console (demo account; separate from member sessions)',
+    body: z.object({ email: z.string().trim().toLowerCase(), password: z.string().min(1) }),
+    response: z.object({ token: z.string(), staff: z.object({ name: z.string(), email: z.string() }) }),
+  }),
+  me: endpoint({
+    method: 'GET',
+    path: '/admin/v1/me',
+    auth: 'admin',
+    summary: 'The signed-in staff member',
+    response: z.object({ name: z.string(), email: z.string() }),
+  }),
   members: endpoint({
     method: 'GET',
     path: '/admin/v1/members',
@@ -276,7 +298,8 @@ export const adminEndpoints = {
     method: 'GET',
     path: '/admin/v1/stream',
     auth: 'admin',
-    summary: 'Live admin events (SSE)',
+    summary: 'Live admin events (SSE; staff token as ?token= because EventSource cannot set headers)',
+    query: z.object({ token: z.string() }),
     stream: true,
     response: AdminStreamEvent,
   }),

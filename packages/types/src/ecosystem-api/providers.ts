@@ -92,6 +92,37 @@ export const lenderEndpoints = {
     body: z.object({ amountPaise: PositivePaise.nullable(), full: z.boolean(), clientRef: Id }),
     response: z.object({ prepaymentRef: Id, status: z.literal('received') }),
   }),
+  collectOverdue: endpoint({
+    method: 'POST',
+    path: '/lender/v1/loans/:loanRef/collect-overdue',
+    auth: 'partner',
+    summary: 'The borrower asks to pay bounced EMIs now from their bank account',
+    params: z.object({ loanRef: Id }),
+    response: z.object({ amountPaise: PositivePaise, status: z.literal('received') }),
+  }),
+  customerLoans: endpoint({
+    method: 'GET',
+    path: '/lender/v1/customers/:customerRef/loans',
+    auth: 'page',
+    summary: 'Lender portal: a borrower’s loans and repayment record',
+    params: z.object({ customerRef: Id }),
+    response: z.object({
+      customerName: z.string(),
+      loans: z.array(
+        z.object({
+          loanRef: Id,
+          lenderName: z.string(),
+          kind: LoanKind,
+          principalPaise: PositivePaise,
+          ratePaBps: Bps,
+          status: LoanStatus,
+          disbursedAt: IsoDateTime.nullable(),
+          schedule: z.array(EmiInstallment),
+          collateral: z.string().nullable(),
+        }),
+      ),
+    }),
+  }),
   application: endpoint({
     method: 'GET',
     path: '/lender/v1/applications/:applicationRef',

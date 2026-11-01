@@ -91,6 +91,24 @@ export function aaHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     return { status: 'ACTIVE' as const, redirectUrl: back('approved') };
   });
 
+  h.on(ecosystemApi.aa.customerConsents, async ({ params }) => {
+    const person = await db.person.findUnique({ where: { id: params.customerRef }, include: { aaConsents: { orderBy: { createdAt: 'desc' } } } });
+    if (!person) throw notFound('Customer');
+    return {
+      customerName: person.name,
+      handle: `${person.phone}@simaa`,
+      consents: person.aaConsents.map((c) => ({
+        consentHandle: c.consentHandle,
+        fiuName: c.fiu,
+        purposeText: PURPOSE_TEXT[c.purpose as AaPurpose],
+        fiTypes: AaFiType.array().parse(JSON.parse(c.fiTypesJson)),
+        status: c.status as 'ACTIVE',
+        createdAt: c.createdAt.toISOString(),
+        decidedAt: c.decidedAt?.toISOString() ?? null,
+      })),
+    };
+  });
+
   h.on(ecosystemApi.aa.revoke, async ({ params }) => {
     const c = await db.aaConsentRequest.findUnique({ where: { consentHandle: params.consentHandle } });
     if (!c) throw notFound('Consent');

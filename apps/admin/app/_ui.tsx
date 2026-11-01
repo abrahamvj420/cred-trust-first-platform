@@ -3,7 +3,7 @@
 import { AdminStreamEvent, type EngineDecision } from '@cred/types';
 import { Money, Surface } from '@cred/ui';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { CRED_API } from '@/lib/api';
+import { CRED_API, staffSession } from '@/lib/api';
 
 /** Load console data and refresh it whenever cred-api pushes an admin event. */
 export function useAdmin<T>(load: () => Promise<T>, deps: unknown[] = []) {
@@ -23,7 +23,9 @@ export function useAdmin<T>(load: () => Promise<T>, deps: unknown[] = []) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void refresh(), deps);
   useEffect(() => {
-    const es = new EventSource(`${CRED_API}/admin/v1/stream`);
+    const token = staffSession.get();
+    if (!token) return;
+    const es = new EventSource(`${CRED_API}/admin/v1/stream?token=${encodeURIComponent(token)}`);
     let timer: ReturnType<typeof setTimeout> | null = null;
     es.onopen = () => setLive(true);
     es.onerror = () => setLive(false);

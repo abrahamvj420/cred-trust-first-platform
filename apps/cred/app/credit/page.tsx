@@ -71,6 +71,11 @@ export default function Credit() {
               <p className="text-caption text-muted">
                 {l.creditLine.shown ? `Yours if you ever need it${l.creditLine.basis === 'salary_verified' ? ', with your verified salary' : ''}. We won’t suggest you borrow.` : l.creditLine.note}
               </p>
+              {!l.creditLine.shown ? (
+                <a href="/repayment-plan" className="text-callout text-accent underline">
+                  See a plan to clear your balance
+                </a>
+              ) : null}
             </Card>
           </section>
 

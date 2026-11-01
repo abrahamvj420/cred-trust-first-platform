@@ -1,5 +1,5 @@
 import { handlers, HttpError, notFound } from '@cred/service-kit';
-import { ecosystemApi, LoanQuote, type EmiInstallment, type LoanKind } from '@cred/types';
+import { ecosystemApi, formatInr, LoanQuote, type EmiInstallment, type LoanKind } from '@cred/types';
 import { addMonthsYmd, demoCode, maskPhone, simDate, simNow, type Ctx } from './context';
 
 /** The lender's own loan maths: equal EMIs on a reducing balance (it is an independent institution). */
@@ -16,12 +16,14 @@ export function schedule(principal: number, ratePaBps: number, months: number, f
 }
 
 /** Which lender offers each product, and how it is priced on top of the lender's base rate. */
-const PRODUCTS: Record<LoanKind, { lender: string; rateOffsetBps: number; stepDown?: { afterOnTimePayments: number; offsetBps: number }[] }> = {
+const PRODUCTS: Record<LoanKind, { lender: string; rateOffsetBps: number; feeBps?: number; stepDown?: { afterOnTimePayments: number; offsetBps: number }[] }> = {
   purchase_emi: { lender: 'lnd_northstar', rateOffsetBps: 0 },
   personal_loan: { lender: 'lnd_banyan', rateOffsetBps: 0 },
   loan_against_funds: { lender: 'lnd_keystone', rateOffsetBps: 0 },
   // Card-Balance Switch: starts 1% above Northstar's base, steps down 1% after 2 and 4 on-time EMIs
   balance_switch_emi: { lender: 'lnd_northstar', rateOffsetBps: 100, stepDown: [{ afterOnTimePayments: 2, offsetBps: 0 }, { afterOnTimePayments: 4, offsetBps: -100 }] },
+  // Hardship repayment plan: clears a carried card balance; 4% below base, no fee
+  repayment_plan: { lender: 'lnd_northstar', rateOffsetBps: -400, feeBps: 0 },
 };
 const VERIFIED_DISCOUNT_BPS = 100;
 /** The lender's own loan-to-value limits; CRED's are stricter. */
@@ -49,7 +51,8 @@ export function lenderHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     const rate = lender.ratePaBps + product.rateOffsetBps - discount;
     const firstDue = addMonthsYmd(await simDate(db), 1);
     const sched = schedule(body.principalPaise, rate, body.tenureMonths, firstDue);
-    const fee = Math.round((body.principalPaise * lender.feeBps) / 10_000);
+    const feeBps = product.feeBps ?? lender.feeBps;
+    const fee = Math.round((body.principalPaise * feeBps) / 10_000);
     const stepDown = product.stepDown?.map((s) => ({ afterOnTimePayments: s.afterOnTimePayments, ratePaBps: lender.ratePaBps + s.offsetBps - discount }));
     const app = await db.loanApplication.create({
       data: {
@@ -59,7 +62,7 @@ export function lenderHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         principalPaise: body.principalPaise,
         tenureMonths: body.tenureMonths,
         ratePaBps: rate,
-        feeBps: lender.feeBps,
+        feeBps,
         quoteJson: '{}',
         clientRef: body.clientRef,
         incomeVerified: body.incomeVerified,
@@ -72,7 +75,7 @@ export function lenderHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       principalPaise: body.principalPaise,
       tenureMonths: body.tenureMonths,
       ratePaBps: rate,
-      feeBps: lender.feeBps,
+      feeBps,
       processingFeePaise: fee,
       gstOnFeePaise: Math.round(fee * 0.18),
       emiPaise: sched[0]!.amountPaise,
@@ -171,8 +174,8 @@ export function lenderHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         db.creditCardAccount.update({ where: { id: card.id }, data: { outstandingPaise: Math.max(0, card.outstandingPaise - app.principalPaise) } }),
         db.cardCharge.create({ data: { cardAccountId: card.id, merchant: `EMI conversion · ${quote.lenderName}`, category: 'other', amountPaise: -app.principalPaise, postedAt: disbursedAt } }),
       ]);
-    } else if (app.kind === 'balance_switch_emi' && card) {
-      // The lender clears the carried balance on the latest bill
+    } else if ((app.kind === 'balance_switch_emi' || app.kind === 'repayment_plan') && card) {
+      // The lender clears the carried balance on the latest bill (a repayment plan clears the whole card balance)
       const statement = await db.cardStatement.findFirst({ where: { cardAccountId: card.id }, orderBy: { periodEnd: 'desc' } });
       if (statement) {
         const onTime = disbursedAt.toISOString().slice(0, 10) <= statement.dueDate;
@@ -313,6 +316,53 @@ function prepayPlan(account: { scheduleJson: string; ratePaBps: number }, full: 
 
 export function prepayHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
   const { db } = ctx;
+
+  /** The borrower pays bounced EMIs now, from their bank account. */
+  h.on(ecosystemApi.lender.collectOverdue, async ({ params }) => {
+    const a = await db.loanAccount.findUnique({ where: { id: params.loanRef }, include: { application: { include: { lender: true } } } });
+    if (!a || !a.application.personId) throw notFound('Loan');
+    const sched = JSON.parse(a.scheduleJson) as EmiInstallment[];
+    const overdue = sched.filter((i) => i.status === 'overdue');
+    if (!overdue.length) throw new HttpError(409, 'nothing_overdue', 'Nothing is overdue on this loan');
+    const total = overdue.reduce((x, i) => x + i.amountPaise, 0);
+    const account = await db.bankAccount.findFirst({ where: { personId: a.application.personId } });
+    if (!account || account.balancePaise < total) {
+      throw new HttpError(422, 'insufficient_funds', `Your account doesn’t have ${formatInr(total)} yet. We’ll try again at the next EMI date, or talk to us and we’ll help.`);
+    }
+    const now = await simNow(db);
+    await db.bankAccount.update({ where: { id: account.id }, data: { balancePaise: { decrement: total } } });
+    await db.bankTxn.create({ data: { accountId: account.id, kind: 'emi', amountPaise: -total, narration: `OVERDUE EMI ${a.application.lender.name.toUpperCase()}`, at: now } });
+    for (const i of overdue) i.status = 'paid';
+    await db.loanAccount.update({ where: { id: a.id }, data: { scheduleJson: JSON.stringify(sched), paidCount: { increment: overdue.length } } });
+    for (const i of overdue) await ctx.outbox.emit('lender.emi.collected', { loanRef: a.id, clientRef: a.application.clientRef, n: i.n, amountPaise: i.amountPaise, onTime: false });
+    return { amountPaise: total, status: 'received' as const };
+  });
+
+  /** Lender portal: a borrower's loans, as the lender sees them. */
+  h.on(ecosystemApi.lender.customerLoans, async ({ params }) => {
+    const person = await db.person.findUnique({ where: { id: params.customerRef } });
+    if (!person) throw notFound('Customer');
+    const apps = await db.loanApplication.findMany({ where: { personId: person.id, status: { in: ['disbursed', 'closed'] } }, include: { lender: true, loan: true }, orderBy: { createdAt: 'desc' } });
+    return {
+      customerName: person.name,
+      loans: apps
+        .filter((x) => x.loan)
+        .map((x) => {
+          const c = x.collateralJson ? (JSON.parse(x.collateralJson) as { units: number | null; schemeCode: string | null; kind: string }) : null;
+          return {
+            loanRef: x.loan!.id,
+            lenderName: x.lender.name,
+            kind: x.kind as LoanKind,
+            principalPaise: x.principalPaise,
+            ratePaBps: x.loan!.ratePaBps || x.ratePaBps,
+            status: x.status as 'disbursed',
+            disbursedAt: x.loan!.disbursedAt.toISOString(),
+            schedule: JSON.parse(x.loan!.scheduleJson) as EmiInstallment[],
+            collateral: c ? `${c.units ? `${c.units} units of ` : ''}${c.schemeCode ?? c.kind} (lien marked)` : null,
+          };
+        }),
+    };
+  });
   const accountFor = async (loanRef: string) => {
     const a = await db.loanAccount.findUnique({ where: { id: loanRef }, include: { application: true } });
     if (!a || !a.application.personId) throw notFound('Loan');

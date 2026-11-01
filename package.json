@@ -16,7 +16,8 @@
     "db:generate": "pnpm --filter @cred/db generate",
     "check:boundaries": "tsx scripts/check-boundaries.ts",
     "postinstall": "pnpm --filter @cred/db generate || true",
-    "screenshots": "node scripts/screenshots.mjs"
+    "screenshots": "node scripts/screenshots.mjs",
+    "demo": "node scripts/demo.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

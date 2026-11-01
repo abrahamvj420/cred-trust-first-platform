@@ -63,6 +63,8 @@ export const ReasonCode = z.enum([
   'already_covered',
   /** The feature needs data the member hasn't shared (e.g. policies via Account Aggregator). */
   'needs_data',
+  /** The member is on a repayment plan: no new credit until it's done. */
+  'on_repayment_plan',
 ]);
 export type ReasonCode = z.infer<typeof ReasonCode>;
 
@@ -111,7 +113,7 @@ export type PolicyKind = z.infer<typeof PolicyKind>;
 export const ClaimStatus = z.enum(['filed', 'documents_pending', 'under_review', 'approved', 'settled', 'rejected']);
 export type ClaimStatus = z.infer<typeof ClaimStatus>;
 
-export const LoanKind = z.enum(['purchase_emi', 'personal_loan', 'loan_against_funds', 'balance_switch_emi']);
+export const LoanKind = z.enum(['purchase_emi', 'personal_loan', 'loan_against_funds', 'balance_switch_emi', 'repayment_plan']);
 export type LoanKind = z.infer<typeof LoanKind>;
 export const LoanStatus = z.enum(['quoted', 'applied', 'approved', 'declined', 'disbursed', 'closed']);
 export const InstallmentStatus = z.enum(['upcoming', 'paid', 'overdue']);
@@ -151,6 +153,8 @@ export const Scenario = z.enum([
   'market_fall',
   'new_vehicle',
   'claim_update',
+  /** An emergency bill empties the account and salary is late: the next EMI bounces. */
+  'cash_crunch',
 ]);
 export type Scenario = z.infer<typeof Scenario>;
 
@@ -166,7 +170,7 @@ export type DealerCover = z.infer<typeof DealerCover>;
 export const ComplaintCategory = z.enum(['offer', 'data_privacy', 'claim', 'payment', 'loan', 'other']);
 export type ComplaintCategory = z.infer<typeof ComplaintCategory>;
 
-export const WORLD_SCENARIOS = ['big_purchase', 'insurer_renewal', 'wearable_sync', 'market_fall', 'new_vehicle', 'claim_update'] as const satisfies readonly Scenario[];
+export const WORLD_SCENARIOS = ['big_purchase', 'insurer_renewal', 'wearable_sync', 'market_fall', 'new_vehicle', 'claim_update', 'cash_crunch'] as const satisfies readonly Scenario[];
 
 export const AlertKind = z.enum(['market_fall', 'collateral', 'renewal', 'claim', 'ladder', 'income', 'loan', 'policy']);
 export type AlertKind = z.infer<typeof AlertKind>;

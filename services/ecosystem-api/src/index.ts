@@ -9,7 +9,7 @@ import { lenderHandlers, prepayHandlers } from './lender';
 import { simHandlers } from './sim';
 import { wearableHandlers } from './wearable';
 import { createOutbox } from './outbox';
-import { billPayHandlers, ecosystemPagesUrl, railsHandlers } from './rails';
+import { bankPortalHandlers, billPayHandlers, ecosystemPagesUrl, railsHandlers } from './rails';
 import { upiHandlers } from './upi';
 
 loadRootEnv();
@@ -58,6 +58,7 @@ const h = handlers()
 
 railsHandlers(ctx, h);
 billPayHandlers(ctx, h);
+bankPortalHandlers(ctx, h);
 upiHandlers(ctx, h);
 lenderHandlers(ctx, h);
 prepayHandlers(ctx, h);

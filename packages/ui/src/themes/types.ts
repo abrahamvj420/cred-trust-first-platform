@@ -3,7 +3,7 @@
  * theme file; apps never hard-code colours or fonts.
  */
 export interface BrandTheme {
-  id: 'cred' | 'admin' | 'shopkart' | 'mockbank' | 'upi' | 'aa' | 'insurer' | 'fundhouse';
+  id: 'cred' | 'admin' | 'shopkart' | 'mockbank' | 'upi' | 'aa' | 'insurer' | 'fundhouse' | 'lender' | 'health';
   displayName: string;
   mode: 'dark' | 'light';
   /** Google font family loaded by the app with next/font, exposed as --font-brand. */

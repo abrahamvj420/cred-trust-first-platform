@@ -32,7 +32,25 @@ export function railsHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     if (await db.gatewayPayment.findUnique({ where: { merchantId_orderId: { merchantId, orderId: body.orderId } } })) {
       throw conflict('duplicate_order', `Order ${body.orderId} already has a payment`);
     }
-    if (body.instrument.method !== 'card') throw new HttpError(501, 'not_implemented', 'UPI checkout arrives in M4');
+    if (body.instrument.method === 'upi') {
+      // UPI collect: the shopper approves on the UPI switch's PIN page, then comes back to the store
+      const payer = await db.vpa.findUnique({ where: { handle: body.instrument.vpa.toLowerCase() }, include: { person: true } });
+      if (!payer?.accountId) throw new HttpError(422, 'invalid_vpa', 'That UPI ID isn’t linked to a bank account');
+      const merchant = await db.merchant.findUniqueOrThrow({ where: { id: merchantId } });
+      const payment = await db.gatewayPayment.create({
+        data: { merchantId, orderId: body.orderId, amountPaise: body.amountPaise, description: body.description, method: 'upi', status: 'requires_authentication', returnUrl: body.returnUrl, shopperPhone: body.shopperPhone },
+      });
+      const payeeVpa = (await db.vpa.findFirst({ where: { name: merchant.name } }))?.handle ?? 'shopkart@mockbank';
+      if (body.amountPaise > 1_00_000_00) {
+        const failed = await db.gatewayPayment.update({ where: { id: payment.id }, data: { status: 'failed', failureReason: 'UPI payments are limited to ₹1,00,000' } });
+        return { payment: toPayment(failed), nextAction: null };
+      }
+      const txn = await db.upiTxn.create({
+        data: { payerVpa: payer.handle, payeeVpa, amountPaise: body.amountPaise, note: body.description.slice(0, 50), initiatedVia: 'shopkart_gateway', clientRef: payment.id, returnUrl: withParam(body.returnUrl, 'paymentId', payment.id) },
+      });
+      const linked = await db.gatewayPayment.update({ where: { id: payment.id }, data: { upiTxnId: txn.id } });
+      return { payment: toPayment(linked), nextAction: { type: 'redirect' as const, url: `${ctx.pagesUrl}/upi/pin/${txn.id}` } };
+    }
 
     const card = await db.creditCardAccount.findUnique({ where: { token: body.instrument.cardToken }, include: { person: true } });
     if (!card || card.person.phone !== body.shopperPhone) throw new HttpError(400, 'invalid_card', 'Card not found for this shopper');
@@ -108,6 +126,32 @@ export function railsHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       limitPaise: updatedCard.limitPaise,
     });
     return { status: 'approved' as const, attemptsLeft: a.attemptsLeft, returnUrl };
+  });
+}
+
+/** Mock Bank net banking: accounts, deposits, the card and its statements, recent transactions. */
+export function bankPortalHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
+  const { db } = ctx;
+  h.on(ecosystemApi.bank.overview, async ({ params }) => {
+    const p = await db.person.findUnique({
+      where: { id: params.customerRef },
+      include: { bankAccounts: { include: { txns: { orderBy: { at: 'desc' }, take: 20 } } }, fixedDeposits: true, cardAccounts: { include: { statements: { orderBy: { periodEnd: 'desc' }, take: 6 } } } },
+    });
+    if (!p) throw notFound('Customer');
+    const card = p.cardAccounts[0];
+    return {
+      customerRef: p.id,
+      name: p.name,
+      accounts: p.bankAccounts.map((a) => ({ accountRef: a.id, accountMasked: `XXXX${a.accountNo.slice(-4)}`, kind: a.kind as 'salary', balancePaise: a.balancePaise })),
+      fixedDeposits: p.fixedDeposits.map((f) => ({ fdRef: f.id, principalPaise: f.principalPaise, ratePaBps: f.ratePaBps, maturesOn: f.maturesOn })),
+      card: card ? { cardRef: card.id, last4: card.last4, limitPaise: card.limitPaise, outstandingPaise: card.outstandingPaise } : null,
+      recentTransactions: p.bankAccounts
+        .flatMap((a) => a.txns)
+        .sort((x, y) => y.at.getTime() - x.at.getTime())
+        .slice(0, 20)
+        .map((t) => ({ at: t.at.toISOString(), narration: t.narration, amountPaise: t.amountPaise, kind: t.kind as 'debit' })),
+      statements: (card?.statements ?? []).map((s) => ({ statementRef: s.id, periodEnd: s.periodEnd, totalDuePaise: s.totalDuePaise, minDuePaise: s.minDuePaise, paidPaise: s.paidPaise, dueDate: s.dueDate })),
+    };
   });
 }
 

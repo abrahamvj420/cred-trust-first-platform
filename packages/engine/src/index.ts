@@ -11,5 +11,6 @@ export * from './features/wealth-liquidity';
 export * from './features/balance-switch';
 export * from './features/insurance';
 export * from './features/wealth';
+export * from './features/repayment-plan';
 export * from './key-facts';
 export * from './member-copy';

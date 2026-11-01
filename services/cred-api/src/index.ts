@@ -14,7 +14,7 @@ import { createCtx } from './context';
 import { Hub } from './hub';
 import { memberHandlers } from './member';
 import { moneyHandlers } from './money';
-import { bearer, issueToken, verifyToken } from './session';
+import { bearer, issueToken, verifyStaffToken, verifyToken } from './session';
 import { ingestWebhook } from './webhooks';
 import { loadRules } from './rules';
 
@@ -42,8 +42,11 @@ const svc = createService({
       const q = req.query as { token?: string };
       return verifyToken(bearer(req.headers.authorization) ?? q.token);
     },
-    // Internal console: open on localhost for the demo.
-    admin: () => ({ actor: 'admin' as const }),
+    // Internal console: staff sign in (demo account seeded); EventSource passes the token as ?token=
+    admin: (req) => {
+      const q = req.query as { token?: string };
+      return verifyStaffToken(bearer(req.headers.authorization) ?? q.token);
+    },
     webhook: (req) => {
       const header = (h: string) => req.headers[h] as string | undefined;
       const result = verifyWebhook(requireEnv('WEBHOOK_SECRET_ECOSYSTEM'), header(WEBHOOK_HEADERS.timestamp), req.rawBody ?? '', header(WEBHOOK_HEADERS.signature));

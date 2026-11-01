@@ -4,6 +4,7 @@ import type { CredDb } from '../cred';
 import { BANK, FUND_HOUSE, INSURER } from './catalog';
 import { folioFor, goldValuePaise, policyIdFor } from './ecosystem';
 import { wipeAllTables } from './reset';
+import { DEMO_STAFF, hashPassword } from './staff';
 import { addDays, addMonths, at } from './util';
 import { summariseActivityWeek } from './wearable';
 import type { PersonaWorld } from './world';
@@ -18,6 +19,7 @@ const CRED_TXN_CYCLES = 3;
 export async function seedCred(db: CredDb, worlds: PersonaWorld[]): Promise<void> {
   await wipeAllTables(db);
   await db.simState.create({ data: { id: 1, currentDate: SIM_START_DATE } });
+  await db.staffUser.create({ data: { id: DEMO_STAFF.id, email: DEMO_STAFF.email, name: DEMO_STAFF.name, passwordHash: hashPassword(DEMO_STAFF.password) } });
 
   for (const w of worlds) {
     const f = w.fixture;

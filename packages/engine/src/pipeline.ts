@@ -181,8 +181,16 @@ export function repaymentHelp(s: MemberSnapshot, rules: RuleValues): HelpDraft {
   };
 }
 
-/** Stressed members get help, not credit, whoever asked. */
+/** Stressed members get help, not credit, whoever asked. A member on a repayment plan is offered nothing new until it's done. */
 export function stressCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): EngineResult | null {
+  if (s.onRepaymentPlan) {
+    return d.stop(
+      'stress',
+      'on_repayment_plan',
+      'Member is on a repayment plan: no new offers until it is complete.',
+      'You’re on a repayment plan, so we won’t suggest anything new until it’s done. Keep going: every payment brings you closer.',
+    );
+  }
   const signals = stressSignals(s, rules);
   const util = Math.round(utilisationBps(s) / 100);
   if (!signals.length) {

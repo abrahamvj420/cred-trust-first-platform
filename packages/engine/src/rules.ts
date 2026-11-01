@@ -21,7 +21,8 @@ export interface RuleDefinition {
     | 'Card-balance switch'
     | 'Protection'
     | 'Wellness'
-    | 'Wealth management';
+    | 'Wealth management'
+    | 'Repayment plan';
   label: string;
   unit: RuleUnit;
   value: number;
@@ -102,6 +103,10 @@ export const RULE_DEFINITIONS = {
 
   // Wealth management (feature 7)
   goalAssumedReturnBps: { group: 'Wealth management', label: 'Return assumed for goal plans', unit: 'bps', value: 1000, min: 0, max: 2000, description: 'Yearly return assumed when planning a goal. Guidance only, not a promise.' },
+
+  // Repayment plan (help for members carrying a balance)
+  planRatePaBps: { group: 'Repayment plan', label: 'Repayment plan rate', unit: 'bps', value: 1200, min: 0, max: 2400, description: 'Yearly rate on a plan to clear a carried card balance; no fee. Far below card interest.' },
+  planMinBalancePaise: { group: 'Repayment plan', label: 'Smallest balance for a plan', unit: 'paise', value: 5_000_00, min: 1_000_00, max: 1_00_000_00, description: 'Below this, paying the balance off directly is simpler than a plan.' },
 } as const satisfies Record<string, RuleDefinition>;
 
 export type RuleKey = keyof typeof RULE_DEFINITIONS;

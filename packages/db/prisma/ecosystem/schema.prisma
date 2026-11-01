@@ -493,6 +493,8 @@ model PersonaBehaviour {
   monthlySpendPaise Int
   salaryPaise       Int
   avgDailySteps     Int
+  /// Next month's salary arrives this many days late (cash-crunch scenario); reset after use
+  salaryDelayDays   Int    @default(0)
 
   person Person @relation(fields: [personId], references: [id], onDelete: Cascade)
 }

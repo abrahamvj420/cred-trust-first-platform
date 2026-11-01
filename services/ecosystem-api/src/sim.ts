@@ -2,7 +2,7 @@ import { catalog, prng } from '@cred/db/seed';
 import { handlers, HttpError, notFound } from '@cred/service-kit';
 import { ecosystemApi, personaByKey, TxnCategory, WORLD_SCENARIOS, type Scenario } from '@cred/types';
 import { approveConsent, notifyFiReady } from './aa';
-import { addMonthsYmd, simDate, type Ctx } from './context';
+import { addMonthsYmd, simDate, simNow, type Ctx } from './context';
 import { dealerMotorPolicy, progressClaim, renewals } from './insurer';
 import { collectEmis, revalueCollateral } from './lender';
 import { sendSummaries } from './wearable';
@@ -140,10 +140,24 @@ export async function advanceOneMonth(ctx: Ctx): Promise<{ from: string; to: str
       const dom = Number(d.slice(8));
       if (account && b) {
         const move = async (amountPaise: number, kind: string, narration: string) => {
+          // Nobody spends money they don't have: skip a debit the account can't cover
+          if (amountPaise < 0) {
+            const fresh = await db.bankAccount.findUniqueOrThrow({ where: { id: account.id } });
+            if (fresh.balancePaise < -amountPaise) return;
+          }
           await db.bankAccount.update({ where: { id: account.id }, data: { balancePaise: { increment: amountPaise } } });
           await db.bankTxn.create({ data: { accountId: account.id, kind, amountPaise, narration, at: at(d, 9) } });
         };
-        if (dom === 1) await move(b.salaryPaise, 'salary', `SALARY ${(p.employer ?? 'EMPLOYER').toUpperCase()}`);
+        // Salary on the 1st. After a cash crunch the next one is held (stored as a negative delay) and paid that many days late.
+        const fresh = await db.personaBehaviour.findUniqueOrThrow({ where: { personId: p.id } });
+        if (dom === 1 && fresh.salaryDelayDays > 0) {
+          await db.personaBehaviour.update({ where: { personId: p.id }, data: { salaryDelayDays: -fresh.salaryDelayDays } });
+        } else if (dom === 1 && fresh.salaryDelayDays === 0) {
+          await move(b.salaryPaise, 'salary', `SALARY ${(p.employer ?? 'EMPLOYER').toUpperCase()}`);
+        } else if (fresh.salaryDelayDays < 0 && dom === 1 - fresh.salaryDelayDays) {
+          await move(b.salaryPaise, 'salary', `SALARY ${(p.employer ?? 'EMPLOYER').toUpperCase()} (LATE)`);
+          await db.personaBehaviour.update({ where: { personId: p.id }, data: { salaryDelayDays: 0 } });
+        }
         if (dom === 5) await move(-Math.round(b.salaryPaise * 0.3), 'debit', 'RENT / HOUSING');
         if (dom === 13) await move(-Math.round(b.salaryPaise * 0.15), 'debit', 'UPI / EVERYDAY SPENDS');
       }
@@ -178,6 +192,7 @@ const SCENARIO_NOTES: Record<Scenario, string> = {
   market_fall: 'Equity fund NAVs fell 15%. The AA flagged new data; lenders re-valued pledged funds.',
   new_vehicle: 'A new car from Velocity Motors: booking paid on the card, with the cover the dealer sold.',
   claim_update: 'The insurer moved the latest open claim one step.',
+  cash_crunch: 'An emergency hospital bill was paid from the bank account and this month’s salary is 10 days late: the next EMI will bounce.',
   partial_bill_payment: 'A member action: pay part of the bill in the CRED app.',
   fund_sale: 'A member action: start selling a fund in the CRED app.',
 };
@@ -242,6 +257,17 @@ export function simHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         await dealerMotorPolicy(ctx, person.id, { registration: v.registration, makeModel: v.makeModel, year: v.year, idvPaise: v.idvPaise }, body.dealerCover);
         events += await notifyFiReady(ctx, 'INSURANCE_POLICIES', person.id);
         if (card && (await postCharge(ctx, card, v.dealer, 'automobile', v.bookingPaise, new Date()))) events += 1;
+        break;
+      }
+      case 'cash_crunch': {
+        const account = await db.bankAccount.findFirst({ where: { personId: person.id } });
+        if (!account) throw notFound('Bank account');
+        const bill = Math.max(0, account.balancePaise - 1_000_00);
+        if (bill > 0) {
+          await db.bankAccount.update({ where: { id: account.id }, data: { balancePaise: { decrement: bill } } });
+          await db.bankTxn.create({ data: { accountId: account.id, kind: 'debit', amountPaise: -bill, narration: 'CITY HOSPITAL EMERGENCY', at: await simNow(db) } });
+        }
+        await db.personaBehaviour.update({ where: { personId: person.id }, data: { salaryDelayDays: 10 } });
         break;
       }
       case 'claim_update': {

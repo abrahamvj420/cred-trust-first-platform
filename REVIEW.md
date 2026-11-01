@@ -4,6 +4,105 @@ One section per milestone from M4 onward: what was built, decisions taken withou
 
 ---
 
+## M7 · Follow-ups, ShopKart, partner portals and demo readiness
+
+Tag `m7`. Gate at tag:
+- `pnpm typecheck`: 11 packages.
+- `pnpm test`: 191 unit tests (engine 124, ui 50, types 11, service-kit 6) and the boundary checker (9 rules).
+- `pnpm test:e2e`: 67 cross-service tests, 8 of them new (7 in `m7.e2e.ts`, plus the loan-against-holdings rounding regression in `borrow.e2e.ts`).
+- `pnpm screenshots final`: every member screen for all five personas, every flow from M4 to M7 and every console page; no serious or critical axe findings.
+
+### M6 follow-ups
+
+1. **Repayment plan.** Rohan's help card now offers **See a plan**, alongside **Talk to us**.
+   - The plan screen gives 3, 6 and 12 months. Each option shows the monthly amount and the total interest, compared with carrying the balance on the card over the same months (the savings method).
+   - The acknowledgement box starts unticked. Confirming sends the plan to a partner (Northstar Finance) and asks for an e-sign OTP.
+   - On disbursal, the lender clears the carried card balance and the plan appears in **Loans**.
+   - While a plan is open, every feature stops at the stress check with `on_repayment_plan`, and Credit hides the credit line in favour of a link to the plan. The member-facing text is supportive: "every payment brings you closer".
+2. **EMI bounce.** The new world scenario `cash_crunch` is under the control room's **Guardrails · EMI bounce** group: **Short at month end**, then **Advance a month**.
+   - It drains the persona's account to ₹1,000 with an emergency hospital bill and holds their salary 10 days. The next EMI bounces.
+   - The member gets a calm alert ("An EMI didn't go through"), and the loan shows an Overdue banner with **Pay now** and **Talk to us**. Pay now is refused kindly while the account is still short.
+   - When the late salary lands, the retried collection clears the EMI.
+   - Admin Overview shows **EMIs bounced in the last month**, the funnel's **Now overdue** and **Members on a repayment plan**. Two e2e tests cover this.
+3. **Console login.** A seeded staff account, `ops@cred.example` / `trust-first-demo` (Ananya Rao), with a scrypt hash.
+   - The token has its own `stf.` prefix and signature, so member tokens never pass admin endpoints.
+   - It is sent as Bearer, or as `?token=` for SSE. A 401 sends the console to `/login`, and there is a Sign out.
+   - Logins and failed logins are audited, and rule and complaint audits name the staff member. Credentials are in the README.
+4. **`pnpm demo`** clears the apps' `.next`, reseeds, and starts everything with `LOG_LEVEL=warn` and `DEMO_MODE=true`.
+   - Output goes to `logs/demo.log`.
+   - It waits for all six `/status` endpoints to report green, warms every page, then prints the URLs and the console login.
+   - The README makes it the way to start a demo.
+
+### Polish and demo readiness
+
+- **ShopKart** is a real store: a 12-product catalogue in 4 categories with fictional brands, MRP and discount, ratings and specs.
+  - Product pages, a cart (cookie), and checkout with card (gateway → Mock Bank OTP) or UPI (gateway collect → SimUPI PIN page). Nothing is pre-selected.
+  - An order confirmation page.
+- **Partner portals**, each in its own brand and reading only ecosystem-api, with `?c=per_<persona>` choosing the customer:
+  - Mock Bank (fixed deposits, recent transactions, card statements);
+  - SimUPI (payments);
+  - SimAA (consents);
+  - the insurer (policies);
+  - the fund house (folios, with units under lien);
+  - **new:** the lender (loans and schedules) and the health app (daily steps stay on the device; only the summaries are shared).
+  - A directory at http://localhost:3003 links them all. `lender` and `health` themes were added, and contrast tests cover them.
+- **Seed tuning.** I checked that every feature has a persona who triggers it cleanly from the control room; the final sweep and e2e run each one from a fresh reset. No persona data had to change. The staff account was added.
+  - Aarav: 1, 5, 7, and the EMI bounce.
+  - Sneha: 2 and privacy.
+  - Priya: 3, 4, 6.
+  - Kabir: 8.
+  - Rohan: help, and the repayment plan.
+- **README:** setup with `pnpm demo`, URLs including every portal, logins, troubleshooting, and a **demo script of six journeys** with exact clicks. A table maps the journeys to all 8 features, the guardrails and the privacy flow.
+- **Final screenshot set** in `docs/screenshots/final/` (below).
+
+### Decisions I made on my own
+
+| Decision | Why |
+|---|---|
+| **Repayment plan at 12% p.a., no fee, 3/6/12 months, through Northstar; not offered under ₹5,000** (rule settings `planRatePaBps`, `planMinBalancePaise`) | A hardship plan should cost clearly less than a normal EMI (16–18%) and far less than the card. Charging a fee to someone struggling would undercut "help, not credit". Very small balances are better cleared from the bill. |
+| **The plan is member-initiated only, from the help card**, and the lender pays the card directly | It is help, not a proactive offer. Paying the card directly means the carried balance really stops growing. |
+| **While on a plan, every feature stops at the stress check** (`on_repayment_plan`), and the credit line is hidden | This is what "no new credit while on a plan" means in the engine itself, not just in the UI. It is logged like any other block. |
+| **Cash crunch = emergency bill down to ₹1,000 plus salary 10 days late** | It is a believable, temporary shortfall. The bounce clears by itself when the salary lands, which shows retry and recovery without hand-editing data. |
+| **No bounce charge** | No charge is in the key facts the member agreed to. Adding one would contradict them. |
+| **Late collections are marked `paid`** (they used to stay `overdue`) | Found while building the bounce: an EMI collected late is paid. |
+| **The console keeps its staff token in localStorage, not a cookie** | The console calls cred-api directly from the browser (no server of its own). It is a localhost demo; cookie sessions would need a backend for the console. |
+| **`pnpm demo` writes service output to `logs/demo.log`** (git-ignored) | When the terminal stopped reading, turbo's stdout pipe stalled the dev services. A file never blocks. |
+| **ShopKart UPI is refused above ₹1 lakh** at the gateway | This is the usual per-transaction UPI limit, so the ₹1.5L laptop must go by card, which is the golden path. |
+| **UPI paid at ShopKart's gateway isn't reported to CRED** | Only UPI made from the CRED app is "seen by CRED directly". A merchant UPI payment would reach CRED only through a bank statement. |
+| **Portals pick the customer with `?c=per_<persona>`**, with no partner login | These pages stand in for each partner's own site. A login per partner would add nothing to the demo. They read only ecosystem-api endpoints marked `auth: 'page'`. |
+| **CRED rounds pledged fund units up** (3 decimals) | Found by the final sweep: a fund sale sized exactly at the 50% cap rounded the units down, so the lender refused the pledge as fractionally short. Now covered by an e2e test, which fails without the fix. |
+| **The lender's "not enough in your account" message uses `formatInr`** | Spotted in the final screenshots: it said "13,610 rupees" in place of ₹13,610. |
+| **The control room gained a "Guardrails · EMI bounce" group** (scenario + Advance a month) | The bounce needs a month to pass. Keeping the two steps visible makes the cause and effect clear in class. |
+
+### Deviations from plan
+
+- The EMI bounce takes two control-room presses, **Short at month end** then **Advance a month**, not one. That's because collections happen at month end.
+- The ShopKart laptop can't be paid by UPI (the UPI limit); the UPI checkout is shown with a smaller item.
+
+### Known gaps
+
+- A single staff role. There are no password changes or lockout, and the staff token lasts until sign-out.
+- There's no way to end a repayment plan early from the app. Early repayment works on loans; it hasn't been tried on plans.
+- Partner portals are read-only views. Members act through CRED and the partner pages that flows open (OTP, PIN, consent).
+- Bounced EMIs are retried only at the next month end. There's no "retry tomorrow".
+
+### Screenshots (`docs/screenshots/final/`)
+
+The full final set: every member screen for all five personas, every M4–M6 flow (regenerated), every console page, and the new screens below. No serious or critical axe findings.
+
+| | | |
+|---|---|---|
+| `m7-01-help-card-plan` | `m7-02-plan-options` | `m7-03-plan-in-loans` |
+| `m7-04-no-credit-on-plan` | `m7-05-bounce-alert` | `m7-06-bounce-options` |
+| `m7-07-admin-defaults` | `m7-08-console-login` | `m7-10-shop-home` |
+| `m7-11-shop-product` | `m7-12-shop-cart` | `m7-13-shop-checkout` |
+| `m7-14-bank-otp` | `m7-15-shop-order` | `m7-16-shop-upi-pin` |
+| `m7-20-ecosystem-directory` | `m7-21-bank-portal` | `m7-22-upi-portal` |
+| `m7-23-aa-portal` | `m7-24-insurer-portal` | `m7-25-fundhouse-portal` |
+| `m7-26-lender-portal` | `m7-27-health-app` | |
+
+---
+
 ## M6 · Privacy, admin console and control room
 
 Tag `m6`. Gate at tag:

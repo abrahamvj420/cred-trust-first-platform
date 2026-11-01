@@ -679,6 +679,29 @@ export const PrepaymentQuote = z.object({
 });
 export type PrepaymentQuote = z.infer<typeof PrepaymentQuote>;
 
+/** A plan to clear a carried card balance: help, not new credit. */
+export const RepaymentPlanOption = z.object({
+  months: z.union([z.literal(3), z.literal(6), z.literal(12)]),
+  monthlyPaise: PositivePaise,
+  totalInterestPaise: NonNegativePaise,
+  ratePaBps: Bps,
+  /** Interest if the same balance stayed on the card and was paid off over the same months. */
+  cardInterestPaise: NonNegativePaise,
+  savingPaise: Paise,
+});
+export type RepaymentPlanOption = z.infer<typeof RepaymentPlanOption>;
+
+export const RepaymentPlanView = z.object({
+  eligible: z.boolean(),
+  /** Why not (supportive), when not eligible. */
+  note: z.string(),
+  balancePaise: NonNegativePaise,
+  lenderName: z.string(),
+  options: z.array(RepaymentPlanOption),
+  activeLoanId: Id.nullable(),
+});
+export type RepaymentPlanView = z.infer<typeof RepaymentPlanView>;
+
 // ── Complaints ────────────────────────────────────────────────────────────────
 
 export const Complaint = z.object({

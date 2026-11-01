@@ -21,7 +21,7 @@ apps/
   shop        Next.js: "ShopKart", a demo merchant store with card and UPI checkout
   ecosystem   Next.js: outside-world screens, each with its own branding and route: Mock Bank
               (card OTP, statements, salary credits), UPI PIN page, Account Aggregator consent
-              page, insurer and fund house pages
+              page, insurer, fund house, lender and health-app pages
 services/
   cred-api        Fastify + TS: CRED's real backend. Ingests transactions, runs the offer engine,
                   permissions, audit log, real-time push to the member app (server-sent events)
@@ -35,7 +35,7 @@ packages/
   db        Prisma + SQLite, separate databases per service (cred.db, ecosystem.db), schemas
             and seed personas
   ui        shared components + one theme file per brand (cred, admin, shopkart, mockbank,
-            upi, aa, insurer, fundhouse)
+            upi, aa, insurer, fundhouse, lender, health)
   service-kit  Fastify plumbing shared by both services: routes only from contracts
             (svc.implement; unimplemented contract endpoints answer 501), Zod validation of
             requests and responses, /status, the DEMO_MODE guard on auth:'demo' endpoints
@@ -74,7 +74,7 @@ tests/e2e/                    `pnpm test:e2e`: starts its own cred-api + ecosyst
 - **CRED never reads the ecosystem database.** Data reaches CRED only through webhooks or consented pulls (Account Aggregator), as in real life.
 - **Each app uses only its own brand theme** from `packages/ui`. No ad-hoc colours or fonts.
 - **Polish priority:** the CRED app and the core flow get full polish; ShopKart looks like a real store; admin and ecosystem screens look credible and clean.
-- `pnpm dev` starts everything, each on a fixed port (listed in README). `pnpm seed` resets all data to the demo personas.
+- `pnpm dev` starts everything, each on a fixed port (listed in README). `pnpm seed` resets all data to the demo personas. `pnpm demo` (M7) is the documented way to start a demo.
 - **The one exception (control room):** admin's Demo tab may call each service's `/status` and `/sim/*` endpoints directly, **only when `DEMO_MODE=true`**. No real app flow may ever call `/sim/*`; services reject `/sim/*` when `DEMO_MODE` is not `true`.
 - `pnpm test:e2e` runs the golden-path integration test across all services. **It must pass after every milestone** (from M2 onward).
 
@@ -220,6 +220,32 @@ Every screen: loading, empty and error states; AA contrast; 44px tap targets; la
 - **Admin funnel:** an offer is *shown* when `shownAt` is set (on creation if shown, or when Smart Savings is granted); dismissed = declined; blocked grouped by first reason. Member gains = accepted offers' measured saving + interest saved by early repayment + wellness discounts.
 - **Control room:** world events go to ecosystem-api `/sim/v1/scenarios`; member actions go to cred-api `/sim/member-actions`, which acts through cred-api's own public API with that member's session (so every rule applies). AA approvals for those actions use `/sim/v1/aa/approve`. All refuse without `DEMO_MODE=true`.
 - **Partner log:** every `ctx.partner` call is recorded (`PartnerCall`), shown in admin with the inbound webhook log.
+
+## Conventions added in M7
+
+- **Repayment plan:** offered only from the help card (member-initiated, never a proactive offer). `GET /v1/repayment-plan` returns 3, 6 and 12-month options from `repaymentPlanOptions` (engine, plan rate `planRatePaBps` 12% p.a., no fee, reducing balance) against carrying the balance on the card; balances under `planMinBalancePaise` (₹5,000) aren't offered one. Start (unticked acknowledgement) → partner (Northstar, `LoanKind` `repayment_plan`) → e-sign OTP → disbursal clears the card's carried balance → tracked in Loans. While a plan is open the snapshot has `onRepaymentPlan`; the stress check stops every feature with `on_repayment_plan`, and the credit line is hidden.
+- **EMI bounce:** the `cash_crunch` scenario (control room → Guardrails) drains the persona's bank account to ₹1,000 and holds next month's salary 10 days (`salaryDelayDays`, negative while held). The next collection bounces (`lender.emi.bounced`) → a calm member alert and an Overdue banner on the loan with **Pay now** (`/v1/loans/:loanId/pay-overdue`, refused kindly if the account is still short) and **Talk to us**. Admin Overview: "EMIs bounced in the last month", funnel "Now overdue", "Members on a repayment plan". Late collections are marked `paid`.
+- **Console login:** staff accounts in `StaffUser` (scrypt hash). Seeded `ops@cred.example` / `trust-first-demo` (Ananya Rao, `DEMO_STAFF` in `packages/db/src/seed/staff.ts`, printed in README). `POST /admin/v1/login` issues an `stf.`-prefixed token signed over `staff.<payload>`; member tokens never pass `auth: 'admin'`. The console keeps it in localStorage and sends it as Bearer (SSE: `?token=`). Logins and failures are audited; rule and complaint audits name the staff member.
+- **`pnpm demo`** (`scripts/demo.mjs`) is the documented way to start a demo: clears the apps' `.next`, runs `pnpm seed`, starts `pnpm dev` with `LOG_LEVEL=warn` and `DEMO_MODE=true` (output to `logs/demo.log`, git-ignored), waits for all six `/status` endpoints, warms the pages and prints URLs and the console login.
+- **ShopKart** is a real store: 12-product catalogue (`apps/shop/lib/catalog.ts`; slugs `aero-14`, `studio-27`, `usb-c-cable` are used by tests), product pages, a cookie cart, checkout with card (gateway → Mock Bank OTP) or UPI (gateway collect → SimUPI PIN page; refused above ₹1 lakh), order confirmation. Nothing is pre-selected at checkout. Gateway UPI payments are not reported to CRED (CRED sees only UPI made from its own app).
+- **Ecosystem portals:** every partner has a customer-facing page in its own brand (`?c=per_<persona>` picks the customer): `/bank`, `/upi`, `/aa`, `/insurer`, `/fundhouse`, `/lender`, `/health`, plus a directory at `/`. They read only ecosystem-api (`auth: 'page'` endpoints). New themes `lender` and `health`.
+- **Loan against holdings:** CRED sizes the pledge at its own loan-to-value and rounds pledged units **up** (3 decimals), so the pledge never falls a fraction short of the lender's cap.
+
+## M7 brief (as given)
+
+Start M7. Same rules: tests and boundary checker green or STOP and report; commit, tag "m7", push; add an M7 section to REVIEW.md; keep CLAUDE.md updated.
+First, M6 follow-ups:
+1. Repayment plan: Rohan's help card promises one, so build it. The member chooses a plan to clear the carried balance over 3, 6 or 12 months; CRED shows the monthly amount and total interest versus carrying it on the card; the plan is created through a partner and tracked in Loans. No new credit is offered while on a plan. Wording stays supportive.
+2. EMI bounce: add a control room scenario that makes a persona short at month end, so an EMI bounces. Show the member a calm notice with options (pay now, contact support), and make admin's defaults metric and funnel reflect it. Add an e2e test.
+3. Admin login: a simple demo login for the admin console (seeded staff account, credentials shown in the README), separate from the member app.
+4. Demo reliability: add `pnpm demo`, which clears Next caches, resets seed data, sets LOG_LEVEL=warn and starts everything, then waits until every service reports green. Make it the documented way to start a demo.
+Then polish and demo readiness:
+- ShopKart: looks like a real store (catalogue, product pages, cart, checkout with card and UPI, order confirmation).
+- Ecosystem screens: Mock Bank, UPI, Account Aggregator, insurer, fund house, lender and the health-app pages each get credible, distinct branding (including the portal pages deferred from M5).
+- Seed data tuned so every feature has a persona that triggers it cleanly.
+- README: setup, URLs, admin login, and a DEMO SCRIPT of 5–6 journeys that together show all 8 features, the guardrails (Rohan's repayment plan) and the privacy flow, with exact clicks.
+- Full final screenshot set in docs/screenshots/final/.
+Then give me a short summary pointing to REVIEW.md, a single list of every decision you made on your own across M4–M7, and what I should check first. Stop.
 
 ## M6 brief (as given)
 

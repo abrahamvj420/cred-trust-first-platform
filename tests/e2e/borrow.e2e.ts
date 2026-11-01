@@ -109,6 +109,17 @@ describe('Wealth-Backed Liquidity (2): trigger is the member starting to sell', 
     for (const a of alerts) expect(`${a.title} ${a.body}`).not.toMatch(/stress|risk|blocked/i);
   });
 
+  it('the control room’s fund sale can be borrowed against: the pledge covers the lender’s cap after rounding', async () => {
+    await cred(credApi.platform.simMemberAction, { body: { action: 'fund_sale', personaKey: 'sneha' } });
+    const token = await login('sneha');
+    const offer = (await cred(credApi.products.offers, { token })).active!;
+    expect(offer.feature).toBe('wealth_backed_liquidity');
+    const acc = await cred(credApi.products.acceptOffer, { token, params: { offerId: offer.id }, body: { option: 'loan', keyFactsAcknowledged: true } });
+    await cred(credApi.products.confirmOffer, { token, params: { offerId: offer.id }, body: { otp: acc.otp.demoOtp } });
+    await settle();
+    expect((await cred(credApi.products.loans, { token })).loans[0]).toMatchObject({ kind: 'loan_against_funds', status: 'disbursed' });
+  });
+
   it('blocked: above the safe share of value there is no loan; selling goes through the fund house', async () => {
     const token = await login('sneha');
     const fund = await flexi(token);

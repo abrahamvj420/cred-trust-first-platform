@@ -6,6 +6,7 @@ import {
   Claim,
   Complaint,
   PrepaymentQuote,
+  RepaymentPlanView,
   Vehicle,
   FamilyMember,
   FloaterComparison,
@@ -184,6 +185,39 @@ export const productEndpoints = {
     params: z.object({ loanId: Id }),
     body: z.object({ amountPaise: PositivePaise.optional(), full: z.boolean().default(false) }).refine((b) => b.full || b.amountPaise !== undefined, { message: 'amountPaise or full' }),
     response: z.object({ quote: PrepaymentQuote, status: z.literal('requested') }),
+  }),
+
+  payOverdue: endpoint({
+    method: 'POST',
+    path: '/v1/loans/:loanId/pay-overdue',
+    auth: 'member',
+    summary: 'Pay a bounced EMI now, from the member’s bank account (the lender confirms by webhook)',
+    params: z.object({ loanId: Id }),
+    response: z.object({ amountPaise: PositivePaise, status: z.literal('requested') }),
+  }),
+  repaymentPlan: endpoint({
+    method: 'GET',
+    path: '/v1/repayment-plan',
+    auth: 'member',
+    summary: 'Plans to clear a carried card balance over 3, 6 or 12 months, vs carrying it',
+    response: RepaymentPlanView,
+  }),
+  startRepaymentPlan: endpoint({
+    method: 'POST',
+    path: '/v1/repayment-plan',
+    auth: 'member',
+    summary: 'Choose a plan; the partner sends an OTP to confirm',
+    body: z.object({ months: z.union([z.literal(3), z.literal(6), z.literal(12)]), termsAcknowledged: z.literal(true) }),
+    response: z.object({ loanId: Id, otp: z.object({ sentTo: z.string(), demoOtp: z.string() }) }),
+  }),
+  confirmRepaymentPlan: endpoint({
+    method: 'POST',
+    path: '/v1/repayment-plan/:loanId/confirm',
+    auth: 'member',
+    summary: 'Confirm with the OTP; the partner clears the card and the plan appears in Loans',
+    params: z.object({ loanId: Id }),
+    body: z.object({ otp: z.string().regex(/^\d{6}$/) }),
+    response: z.object({ loanId: Id, status: z.literal('requested') }),
   }),
 
   // ── Wealth (features 2, 7) ──

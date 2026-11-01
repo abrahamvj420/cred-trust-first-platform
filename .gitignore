@@ -43,3 +43,6 @@ packages/db/src/generated/
 next-env.d.ts
 *.tsbuildinfo
 packages/db/data/*.db*
+
+# pnpm demo output
+logs/

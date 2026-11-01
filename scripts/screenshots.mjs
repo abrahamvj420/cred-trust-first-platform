@@ -32,7 +32,14 @@ const failures = [];
 const log = (...a) => console.log('•', ...a);
 
 // ── API helpers (setup only; the UI is what's under test) ──────────────────
+const STAFF = { email: 'ops@cred.example', password: 'trust-first-demo' };
+let staffToken = null;
 async function http(url, { method = 'GET', body, headers = {} } = {}) {
+  // Console endpoints need the demo staff session
+  if (url.includes('/admin/v1/') && !url.endsWith('/admin/v1/login')) {
+    staffToken ??= (await http(`${CRED_API}/admin/v1/login`, { method: 'POST', body: STAFF })).token;
+    headers = { ...headers, authorization: `Bearer ${staffToken}` };
+  }
   const res = await fetch(url, { method, headers: { ...(body ? { 'content-type': 'application/json' } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
   const json = await res.json().catch(() => null);
   if (!res.ok) throw new Error(`${method} ${url} → ${res.status} ${JSON.stringify(json)}`);
@@ -561,9 +568,16 @@ await visit(`${CRED}/cards/not-a-card`, 'error state', { shot: '28-error-state',
 
 // ── M6 flows ────────────────────────────────────────────────────────────────
 
-/** Desktop console: wider viewport, same checks. */
+/** Desktop console: wider viewport, same checks. Signs in as the demo staff member first. */
+let consoleSignedIn = false;
 async function adminVisit(url, label, shot) {
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  if (!consoleSignedIn && url.startsWith(ADMIN)) {
+    staffToken ??= (await http(`${CRED_API}/admin/v1/login`, { method: 'POST', body: STAFF })).token;
+    await page.goto(`${ADMIN}/login`, { waitUntil: 'domcontentloaded' });
+    await page.evaluate((t) => localStorage.setItem('cred_console_token', t), staffToken);
+    consoleSignedIn = true;
+  }
   pageErrors = [];
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await until(() => page.evaluate(() => !document.body.innerText.includes('Loading…') && !!document.querySelector('main')), `${label} loaded`, 20000);
@@ -734,6 +748,165 @@ async function adminVisit(url, label, shot) {
   await page.screenshot({ path: path.join(OUT, 'm6-31-control-room-fired.png') });
   await http(`${CRED_API}/admin/v1/rules/reset`, { method: 'POST', body: { reason: 'screenshots' } });
   log('admin console and control room: every page renders, rule edit validated, scenario fired');
+}
+
+// ── M7 ──────────────────────────────────────────────────────────────────────
+
+/** Desktop page outside the phone frame (ShopKart, ecosystem portals). */
+async function deskVisit(url, label, shot, { navigate = true } = {}) {
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  pageErrors = [];
+  if (navigate) await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await until(() => page.evaluate(() => !document.body.innerText.includes('Loading…')), `${label} loaded`, 20000);
+  await new Promise((r) => setTimeout(r, 600));
+  const text = await page.evaluate(() => document.body.innerText);
+  if (/Could not load|Something went wrong/.test(text)) failures.push(`${label}: shows an error`);
+  for (const e of pageErrors) failures.push(`${label}: page error: ${e}`);
+  pageErrors = [];
+  await axe(label);
+  if (shot) {
+    const h = await page.evaluate(() => document.documentElement.scrollHeight);
+    await page.setViewport({ width: 1280, height: Math.min(Math.max(860, h), 3600), deviceScaleFactor: 1 });
+    await new Promise((r) => setTimeout(r, 150));
+    await page.screenshot({ path: path.join(OUT, `${shot}.png`) });
+  }
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+}
+const SHOP = 'http://localhost:3002';
+const ECO = 'http://localhost:3003';
+
+// Repayment plan: Rohan's help card → plan → confirmed → tracked in Loans; no new credit after
+{
+  await reset();
+  const token = await signIn('rohan');
+  await buy('rohan', 1_50_000_00, 'Aero 14 Laptop');
+  await page.goto(CRED, { waitUntil: 'domcontentloaded' });
+  await waitText('See a plan', 20000);
+  await settle();
+  await check('help card with plan', { shot: 'm7-01-help-card-plan' });
+  await clickText('See a plan', 'a');
+  await waitText('Over how long?');
+  await clickText('a month for 6 months', 'label');
+  await page.click('input[type=checkbox]');
+  await settle();
+  await check('plan options', { shot: 'm7-02-plan-options' });
+  await clickText('Set up this plan', 'button');
+  await page.waitForSelector('input[autocomplete=one-time-code]');
+  await page.type('input[autocomplete=one-time-code]', '123456');
+  await clickText('Confirm my plan', 'button');
+  await until(() => page.evaluate(() => location.pathname.startsWith('/loans/')), 'plan in loans', 20000);
+  await drain();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await settle();
+  await check('plan schedule', { shot: 'm7-03-plan-in-loans' });
+  await buy('rohan', 38_500_00, 'Studio 27 4K Monitor');
+  await drain();
+  await visit(`${CRED}/profile/data`, 'rohan decisions on plan', { shot: 'm7-04-no-credit-on-plan' });
+  void token;
+  log('repayment plan: chosen, confirmed by the partner, tracked; no new credit while on it');
+}
+
+// EMI bounce: Aarav's laptop EMI, then a cash crunch
+{
+  await reset();
+  const token = await signIn('aarav');
+  await buy('aarav', 1_50_000_00, 'Aero 14 Laptop');
+  await until(async () => (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active, 'offer');
+  await http(`${CRED_API}/v1/permissions`, { method: 'POST', headers: asMember(token), body: { scope: 'smart_savings', context: 'demo', explicit: true } });
+  const o = (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active;
+  const acc = await http(`${CRED_API}/v1/offers/${o.id}/accept`, { method: 'POST', headers: asMember(token), body: { option: 'emi', keyFactsAcknowledged: true } });
+  await http(`${CRED_API}/v1/offers/${o.id}/confirm`, { method: 'POST', headers: asMember(token), body: { otp: acc.otp.demoOtp } });
+  await drain();
+  await scenario('cash_crunch', 'aarav');
+  await advance();
+  await visit(`${CRED}/alerts`, 'bounce alert', { shot: 'm7-05-bounce-alert' });
+  const loan = (await http(`${CRED_API}/v1/loans`, { headers: asMember(token) })).loans[0];
+  await visit(`${CRED}/loans/${loan.id}`, 'bounce loan');
+  await clickText('Pay now', 'button');
+  await waitText('doesn’t have');
+  await settle();
+  await check('bounce pay now', { shot: 'm7-06-bounce-options' });
+  await adminVisit(`${ADMIN}/`, 'admin overview with bounce', 'm7-07-admin-defaults');
+  log('EMI bounce: calm notice with options; admin defaults reflect it');
+}
+
+// Console sign-in
+{
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await page.goto(`${ADMIN}/login`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => localStorage.removeItem('cred_console_token'));
+  consoleSignedIn = false;
+  await page.goto(`${ADMIN}/login`, { waitUntil: 'domcontentloaded' });
+  await deskVisit(`${ADMIN}/login`, 'console login', 'm7-08-console-login', { navigate: false });
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await page.type('input[type=email]', STAFF.email);
+  await page.type('input[type=password]', STAFF.password);
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Sign in', 'button')]);
+  await waitText('Signed in as Ananya Rao', 20000);
+  consoleSignedIn = true;
+  log('console: staff sign-in');
+}
+
+// ShopKart: catalogue → product → cart → checkout (card, then UPI) → order confirmation
+{
+  await reset();
+  await deskVisit(`${SHOP}/`, 'shop home');
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await page.select('#persona', 'aarav');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Switch', 'button')]);
+  await deskVisit(`${SHOP}/`, 'shop home as aarav', 'm7-10-shop-home', { navigate: false });
+  await deskVisit(`${SHOP}/product/studio-27`, 'shop product', 'm7-11-shop-product');
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Add to cart', 'button')]);
+  await deskVisit(`${SHOP}/cart`, 'shop cart', 'm7-12-shop-cart', { navigate: false });
+  await deskVisit(`${SHOP}/checkout`, 'shop checkout');
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await clickText('Credit or debit card', 'label');
+  await page.waitForSelector('input[name=cardToken]');
+  await page.click('input[name=cardToken]');
+  await deskVisit(`${SHOP}/checkout`, 'shop checkout card', 'm7-13-shop-checkout', { navigate: false });
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Pay ₹', 'button')]);
+  await page.waitForSelector('input[inputmode=numeric]');
+  await deskVisit(page.url(), 'bank otp page', 'm7-14-bank-otp', { navigate: false });
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await page.type('input[inputmode=numeric]', '123456');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Confirm payment', 'button')]);
+  await waitText('your order is placed', 20000);
+  await deskVisit(page.url(), 'order placed', 'm7-15-shop-order', { navigate: false });
+  // UPI checkout of a small item
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await page.goto(`${SHOP}/product/usb-c-cable`, { waitUntil: 'domcontentloaded' });
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Buy now', 'button')]);
+  await clickText('UPI', 'label');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Pay ₹', 'button')]);
+  await page.waitForSelector('input[type=password]');
+  await deskVisit(page.url(), 'upi pin for shop', 'm7-16-shop-upi-pin', { navigate: false });
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await page.type('input[type=password]', '1234');
+  await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), clickText('Pay', 'button[type=submit]')]);
+  await waitText('your order is placed', 20000);
+  log('ShopKart: catalogue, product, cart, card checkout with bank OTP, UPI checkout with PIN, orders');
+}
+
+// Ecosystem portals, each in its own brand
+{
+  await reset();
+  await deskVisit(`${ECO}/`, 'ecosystem directory', 'm7-20-ecosystem-directory');
+  await deskVisit(`${ECO}/bank?c=per_sneha`, 'bank portal', 'm7-21-bank-portal');
+  await deskVisit(`${ECO}/upi?c=per_priya`, 'upi portal', 'm7-22-upi-portal');
+  await deskVisit(`${ECO}/aa?c=per_sneha`, 'aa portal', 'm7-23-aa-portal');
+  await deskVisit(`${ECO}/insurer?c=per_priya`, 'insurer portal', 'm7-24-insurer-portal');
+  await deskVisit(`${ECO}/fundhouse?c=per_sneha`, 'fund house portal', 'm7-25-fundhouse-portal');
+  await http(`${CRED_API}/sim/member-actions`, { method: 'POST', body: { action: 'fund_sale', personaKey: 'sneha' } });
+  const t = await login('sneha');
+  const off = (await http(`${CRED_API}/v1/offers`, { headers: asMember(t) })).active;
+  const acc = await http(`${CRED_API}/v1/offers/${off.id}/accept`, { method: 'POST', headers: asMember(t), body: { option: 'loan', keyFactsAcknowledged: true } });
+  await http(`${CRED_API}/v1/offers/${off.id}/confirm`, { method: 'POST', headers: asMember(t), body: { otp: acc.otp.demoOtp } });
+  await drain();
+  await deskVisit(`${ECO}/lender?c=per_sneha`, 'lender portal', 'm7-26-lender-portal');
+  await deskVisit(`${ECO}/health?c=per_priya`, 'health app', 'm7-27-health-app');
+  log('ecosystem: bank, UPI, AA, insurer, fund house, lender and health app portals');
 }
 
 await browser.close();

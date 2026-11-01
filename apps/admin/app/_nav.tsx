@@ -1,6 +1,9 @@
 'use client';
 
+import { credApi } from '@cred/types';
 import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { credAdmin, staffSession } from '@/lib/api';
 
 const LINKS = [
   ['/', 'Overview'],
@@ -14,8 +17,19 @@ const LINKS = [
   ['/demo', 'Control room'],
 ] as const;
 
+/** Sidebar with the signed-in staff member. Every page except sign-in requires a staff session. */
 export function Nav() {
   const path = usePathname();
+  const [staff, setStaff] = useState<{ name: string } | null>(null);
+  useEffect(() => {
+    if (path === '/login') return;
+    if (!staffSession.get()) {
+      window.location.href = `/login?next=${encodeURIComponent(path)}`;
+      return;
+    }
+    credAdmin(credApi.admin.me).then(setStaff, () => undefined);
+  }, [path]);
+  if (path === '/login') return null;
   return (
     <nav aria-label="Console" className="sticky top-0 flex h-dvh w-56 shrink-0 flex-col gap-1 border-r border-border bg-surface px-3 py-5">
       <span className="mb-4 px-3 text-sm font-semibold">
@@ -29,7 +43,20 @@ export function Nav() {
           </a>
         );
       })}
-      <p className="mt-auto px-3 text-xs text-muted">Prototype · synthetic data only</p>
+      <div className="mt-auto flex flex-col gap-2 px-3">
+        {staff ? <span className="text-xs">Signed in as {staff.name}</span> : null}
+        <button
+          type="button"
+          className="self-start text-xs text-muted underline hover:text-text"
+          onClick={() => {
+            staffSession.clear();
+            window.location.href = '/login';
+          }}
+        >
+          Sign out
+        </button>
+        <p className="text-xs text-muted">Prototype · synthetic data only</p>
+      </div>
     </nav>
   );
 }

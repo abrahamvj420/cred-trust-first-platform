@@ -225,6 +225,54 @@ export const fundhouseTheme: BrandTheme = {
   elevation: lightElevation,
 };
 
+/** Northstar Finance (and partner lenders' portal): sober, trustworthy navy. */
+export const lenderTheme: BrandTheme = {
+  id: 'lender',
+  displayName: 'Northstar Finance',
+  mode: 'light',
+  font: { sans: 'Source Sans 3' },
+  colors: {
+    bg: '#F5F7FB',
+    surface: '#FFFFFF',
+    raised: '#FFFFFF',
+    border: '#D8DEEA',
+    text: '#101828',
+    muted: '#4F5B70',
+    accent: '#1D4ED8',
+    accentText: '#FFFFFF',
+    positive: '#15803D',
+    negative: '#B42318',
+    warning: '#A44A06',
+  },
+  radius: radius(4, 6, 10),
+  ...base,
+  elevation: lightElevation,
+};
+
+/** The member's health app (mocked Apple Health / Health Connect): soft, personal coral. */
+export const healthTheme: BrandTheme = {
+  id: 'health',
+  displayName: 'Health',
+  mode: 'light',
+  font: { sans: 'Rubik' },
+  colors: {
+    bg: '#FFF7F7',
+    surface: '#FFFFFF',
+    raised: '#FFFFFF',
+    border: '#F1D9DC',
+    text: '#2B1416',
+    muted: '#7A4F55',
+    accent: '#BE123C',
+    accentText: '#FFFFFF',
+    positive: '#15803D',
+    negative: '#B42318',
+    warning: '#A44A06',
+  },
+  radius: radius(10, 16, 22),
+  ...base,
+  elevation: lightElevation,
+};
+
 export const themes = {
   cred: credTheme,
   admin: adminTheme,
@@ -234,6 +282,8 @@ export const themes = {
   aa: aaTheme,
   insurer: insurerTheme,
   fundhouse: fundhouseTheme,
+  lender: lenderTheme,
+  health: healthTheme,
 } as const satisfies Record<BrandTheme['id'], BrandTheme>;
 
 /**

@@ -228,7 +228,8 @@ async function onEmiCollected(ctx: Ctx, event: WebhookEventOf<'lender.emi.collec
   const { db } = ctx;
   const loan = await db.loan.findUnique({ where: { loanRef: event.data.loanRef } });
   if (!loan) return null;
-  await db.emiInstallment.updateMany({ where: { loanId: loan.id, n: event.data.n }, data: { status: event.data.onTime ? 'paid' : 'overdue' } });
+  // Collected, on time or late (a bounced EMI paid later): it's paid
+  await db.emiInstallment.updateMany({ where: { loanId: loan.id, n: event.data.n }, data: { status: 'paid' } });
   const all = await db.emiInstallment.findMany({ where: { loanId: loan.id } });
   if (all.every((i) => i.status === 'paid')) {
     await db.loan.update({ where: { id: loan.id }, data: { status: 'closed' } });
@@ -433,11 +434,11 @@ async function onEmiBounced(ctx: Ctx, event: WebhookEventOf<'lender.emi.bounced'
   const loan = await db.loan.findUnique({ where: { loanRef: event.data.loanRef } });
   if (!loan) return null;
   await db.emiInstallment.updateMany({ where: { loanId: loan.id, n: event.data.n }, data: { status: 'overdue' } });
-  await ctx.audit({ memberId: loan.memberId, actor: 'partner', action: 'loan.emi_bounced', target: loan.id, details: { n: event.data.n, amountPaise: event.data.amountPaise } });
+  await ctx.audit({ memberId: loan.memberId, actor: 'partner', action: 'loan.emi_bounced', target: loan.id, details: { n: event.data.n, amountPaise: event.data.amountPaise, simDate: await ctx.simDate() } });
   await raiseAlert(ctx, loan.memberId, {
     kind: 'loan',
     title: `Your ${loan.lenderName} EMI couldn’t be collected`,
-    body: `There wasn’t enough in your account for EMI ${event.data.n} of ${formatInr(event.data.amountPaise)}. ${loan.lenderName} will try again next month. If money is tight, talk to us and we’ll help you plan.`,
+    body: `There wasn’t enough in your account for EMI ${event.data.n} of ${formatInr(event.data.amountPaise)}. You can pay it now from the loan screen, or ${loan.lenderName} will try again at the next EMI date. If money is tight, talk to us: we’ll help you plan.`,
     href: `/loans/${loan.id}`,
     sourceRef: event.id,
   });

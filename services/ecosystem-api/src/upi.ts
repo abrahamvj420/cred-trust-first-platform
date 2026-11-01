@@ -50,8 +50,25 @@ export function upiHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       status: t.status as 'awaiting_pin',
       attemptsLeft: t.attemptsLeft,
       returnUrl: t.returnUrl,
-      initiatedVia: t.initiatedVia === 'cred' ? 'CRED' : t.initiatedVia,
+      initiatedVia: t.initiatedVia === 'cred' ? 'CRED' : 'ShopKart checkout',
       demoPin: payer.pin ?? '1234',
+    };
+  });
+
+  h.on(ecosystemApi.upi.customerPayments, async ({ params }) => {
+    const person = await db.person.findUnique({ where: { id: params.customerRef }, include: { vpas: true } });
+    if (!person) throw notFound('Customer');
+    const mine = person.vpas.map((v) => v.handle);
+    const txns = await db.upiTxn.findMany({ where: { OR: [{ payerVpa: { in: mine } }, { payeeVpa: { in: mine } }], status: { not: 'awaiting_pin' } }, orderBy: { createdAt: 'desc' }, take: 25 });
+    const names = new Map((await db.vpa.findMany({ where: { handle: { in: txns.flatMap((t) => [t.payerVpa, t.payeeVpa]) } } })).map((v) => [v.handle, v.name]));
+    return {
+      customerName: person.name,
+      vpas: mine,
+      payments: txns.map((t) => {
+        const sent = mine.includes(t.payerVpa);
+        const other = sent ? t.payeeVpa : t.payerVpa;
+        return { ref: t.id, direction: sent ? ('sent' as const) : ('received' as const), counterparty: names.get(other) ?? other, amountPaise: t.amountPaise, status: t.status as 'success', via: t.initiatedVia === 'cred' ? 'CRED' : 'ShopKart checkout', at: t.createdAt.toISOString(), rrn: t.rrn };
+      }),
     };
   });
 
@@ -70,6 +87,11 @@ export function upiHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     const payer = await db.vpa.findUniqueOrThrow({ where: { handle: t.payerVpa }, include: { account: true } });
     const finish = async (status: 'success' | 'failed', failureReason: string | null, ref: string | null, attemptsLeft: number) => {
       await db.upiTxn.update({ where: { id: t.id }, data: { status, failureReason, rrn: ref, attemptsLeft } });
+      if (t.initiatedVia === 'shopkart_gateway') {
+        // A merchant checkout: the gateway learns the result; CRED isn't involved
+        await db.gatewayPayment.update({ where: { id: t.clientRef }, data: { status: status === 'success' ? 'succeeded' : 'failed', failureReason } });
+        return done(status, failureReason, attemptsLeft, ref);
+      }
       await ctx.outbox.emit('upi.transaction.completed', {
         upiTxnRef: t.id,
         clientRef: t.clientRef,

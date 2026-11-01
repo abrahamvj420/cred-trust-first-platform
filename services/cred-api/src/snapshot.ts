@@ -18,7 +18,7 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
       income: true,
       ladder: true,
       offers: true,
-      loans: { where: { status: 'disbursed' } },
+      loans: { where: { status: { in: ['applied', 'approved', 'disbursed'] } } },
       helpPlans: { where: { simDate: { startsWith: month } } },
     },
   });
@@ -49,7 +49,8 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
     smartSavings: smart ? (smart.status as 'granted' | 'withdrawn') : 'never',
     smartSavingsLastAskedOn: lastAskedOn,
     verifiedMonthlyIncomePaise: member.income?.monthlyNetPaise ?? null,
-    existingEmiPaise: member.loans.reduce((a, l) => a + l.emiPaise, 0),
+    existingEmiPaise: member.loans.filter((l) => l.status === 'disbursed').reduce((a, l) => a + l.emiPaise, 0),
+    onRepaymentPlan: member.loans.some((l) => l.kind === 'repayment_plan'),
     // The limit in force: the ladder tier's, raised by verified salary
     ladder: { tier, limitPaise: creditLine(tier, member.income?.monthlyNetPaise ?? null, false, activeRules()).limitPaise },
     offers: {

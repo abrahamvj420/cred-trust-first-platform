@@ -23,8 +23,18 @@ const env = (k: string) => {
   return v;
 };
 
-export const cred = <E extends Endpoint>(e: E, input: CallInput<E> & { token?: string } = {}): Promise<EndpointResponse<E>> =>
-  call(E2E.credApi, e, { ...input, headers: { ...input.headers, ...(input.token ? { authorization: `Bearer ${input.token}` } : {}) } });
+/** The demo staff account signs in once for the console endpoints (auth: 'admin'). */
+let staffToken: string | null = null;
+export const STAFF = { email: 'ops@cred.example', password: 'trust-first-demo' };
+async function staff(): Promise<string> {
+  staffToken ??= (await call(E2E.credApi, credApi.admin.login, { body: STAFF })).token;
+  return staffToken;
+}
+
+export const cred = async <E extends Endpoint>(e: E, input: CallInput<E> & { token?: string } = {}): Promise<EndpointResponse<E>> => {
+  const token = input.token ?? (e.auth === 'admin' ? await staff() : undefined);
+  return call(E2E.credApi, e, { ...input, headers: { ...input.headers, ...(token ? { authorization: `Bearer ${token}` } : {}) } });
+};
 
 export const eco = <E extends Endpoint>(e: E, input: CallInput<E> & { as?: 'merchant' | 'partner' | 'page' } = {}): Promise<EndpointResponse<E>> =>
   call(E2E.ecosystemApi, e, {

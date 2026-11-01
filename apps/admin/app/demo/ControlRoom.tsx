@@ -47,6 +47,14 @@ const FEATURES: { title: string; hint: string; triggers: Trigger[] }[] = [
   },
   { title: '7 · Wealth Management', hint: 'Aarav', triggers: [{ kind: 'member', action: 'link_portfolio', label: 'Link portfolio via AA' }] },
   { title: '8 · Card-Balance Switch', hint: 'Kabir (offer), Rohan (help)', triggers: [{ kind: 'member', action: 'partial_bill_payment', label: 'Pay part of the bill' }] },
+  {
+    title: 'Guardrails · EMI bounce',
+    hint: 'Any persona with an EMI (e.g. Aarav after the laptop): short at month end, then advance',
+    triggers: [
+      { kind: 'world', scenario: 'cash_crunch', label: 'Short at month end' },
+      { kind: 'advance', label: 'Advance a month' },
+    ],
+  },
 ];
 
 export function ControlRoom() {

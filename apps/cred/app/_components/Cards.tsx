@@ -98,7 +98,12 @@ export function HelpCard({ help }: { help: HelpPlan }) {
       </p>
       <h2 className="text-headline">{help.title}</h2>
       <p className="text-callout text-muted">{help.body}</p>
-      <p className="text-caption text-muted">Repayment plans and a talk-to-us line are coming soon.</p>
+      <div className="grid grid-cols-2 gap-3">
+        <ButtonLink href="/help" variant="secondary">
+          Talk to us
+        </ButtonLink>
+        <ButtonLink href="/repayment-plan">See a plan</ButtonLink>
+      </div>
     </Card>
   );
 }

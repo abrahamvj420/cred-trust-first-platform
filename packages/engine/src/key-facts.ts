@@ -7,6 +7,7 @@ const LOAN_TYPE: Record<LoanTerms['loanKind'], string> = {
   personal_loan: 'Personal loan',
   loan_against_funds: 'Loan against your holdings',
   balance_switch_emi: 'Card balance moved to an EMI',
+  repayment_plan: 'Repayment plan for your card balance',
 };
 
 /** RBI-style Key Fact Statement for a loan option, shown before acceptance. */

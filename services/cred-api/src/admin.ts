@@ -1,6 +1,8 @@
 import { formatRuleValue, LADDER_TIERS, RULE_DEFINITIONS, stressSignals, validateRuleChange, type RuleKey } from '@cred/engine';
-import { handlers, HttpError, notFound } from '@cred/service-kit';
-import { credApi, FeatureKey, ReasonCode } from '@cred/types';
+import { handlers, HttpError, notFound, unauthorized } from '@cred/service-kit';
+import { verifyPassword } from '@cred/db/seed';
+import { credApi, FeatureKey, ReasonCode, type StaffSession } from '@cred/types';
+import { issueStaffToken } from './session';
 import type { Ctx } from './context';
 import { toAudit, toComplaint, toDecision, toLoan, toTxn } from './mappers';
 import { activeRules, loadRules } from './rules';
@@ -16,6 +18,18 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     const value = activeRules()[key];
     return { key, group: d.group, label: d.label, unit: d.unit, value, display: formatRuleValue(d.unit, value), description: d.description, min: d.min, max: d.max, changed: value !== d.value, defaultValue: d.value };
   };
+
+  h.on(credApi.admin.login, async ({ body }) => {
+    const staff = await db.staffUser.findUnique({ where: { email: body.email } });
+    if (!staff || !verifyPassword(body.password, staff.passwordHash)) {
+      await ctx.audit({ memberId: null, actor: 'admin', action: 'admin.login_failed', target: body.email });
+      throw unauthorized('Email or password is not right');
+    }
+    await ctx.audit({ memberId: null, actor: 'admin', action: 'admin.login', target: staff.email, details: { staff: staff.name } });
+    return { token: issueStaffToken({ staffId: staff.id, name: staff.name, email: staff.email, issuedAt: new Date().toISOString() }), staff: { name: staff.name, email: staff.email } };
+  });
+
+  h.on<typeof credApi.admin.me, StaffSession>(credApi.admin.me, async ({ auth }) => ({ name: auth.name, email: auth.email }));
 
   h.on(credApi.admin.members, async () => {
     const month = (await ctx.simDate()).slice(0, 7);
@@ -89,22 +103,22 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     editable: true,
   }));
 
-  h.on(credApi.admin.updateRule, async ({ params, body }) => {
+  h.on<typeof credApi.admin.updateRule, StaffSession>(credApi.admin.updateRule, async ({ params, body, auth }) => {
     const problem = validateRuleChange(activeRules(), params.key, body.value);
     if (problem) throw new HttpError(422, 'invalid_rule', problem);
     const key = params.key as RuleKey;
     const from = activeRules()[key];
     await db.ruleSetting.upsert({ where: { key }, update: { value: body.value }, create: { key, value: body.value } });
     await loadRules(db);
-    await ctx.audit({ memberId: null, actor: 'admin', action: 'rule.changed', target: key, details: { from, to: body.value, reason: body.reason } });
+    await ctx.audit({ memberId: null, actor: 'admin', action: 'rule.changed', target: key, details: { from, to: body.value, reason: body.reason, staff: auth.name } });
     return { rule: ruleView(key) };
   });
 
-  h.on(credApi.admin.resetRules, async ({ body }) => {
+  h.on<typeof credApi.admin.resetRules, StaffSession>(credApi.admin.resetRules, async ({ body, auth }) => {
     const changed = await db.ruleSetting.findMany();
     await db.ruleSetting.deleteMany();
     await loadRules(db);
-    await ctx.audit({ memberId: null, actor: 'admin', action: 'rule.reset_all', target: null, details: { reason: body.reason, keys: changed.map((c) => c.key) } });
+    await ctx.audit({ memberId: null, actor: 'admin', action: 'rule.reset_all', target: null, details: { reason: body.reason, keys: changed.map((c) => c.key), staff: auth.name } });
     return { ok: true as const };
   });
 
@@ -113,13 +127,14 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
   h.on(credApi.admin.overview, async () => {
     const [decisions, offers, loans, statementsMissed, members, openComplaints, policies] = await Promise.all([
       db.engineDecision.findMany({ select: { feature: true, outcome: true, reasonsJson: true } }),
-      db.offer.findMany({ select: { feature: true, status: true, shownAt: true, netBenefitPaise: true } }),
+      db.offer.findMany({ select: { id: true, feature: true, status: true, shownAt: true, netBenefitPaise: true } }),
       db.loan.findMany({ where: { status: { in: ['disbursed', 'closed'] } }, include: { installments: true } }),
       db.statement.count({ where: { ladderOutcome: 'missed' } }),
       db.member.findMany({ where: { deletedAt: null }, select: { id: true } }),
       db.complaint.count({ where: { status: 'open' } }),
       db.insurancePolicy.aggregate({ _sum: { wellnessSavedPaise: true }, _count: { wellnessSavedPaise: true }, where: { wellnessSavedPaise: { gt: 0 } } }),
     ]);
+    const overdueOffers = new Set(loans.filter((l) => l.offerId && l.installments.some((i) => i.status === 'overdue')).map((l) => l.offerId!));
     const funnel = FeatureKey.options.map((feature) => {
       const ds = decisions.filter((d) => d.feature === feature);
       const os = offers.filter((o) => o.feature === feature);
@@ -135,6 +150,7 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         awaitingPermission: os.filter((o) => o.status === 'awaiting_permission').length,
         shown: os.filter((o) => o.shownAt).length,
         accepted: os.filter((o) => o.status === 'accepted').length,
+        acceptedNowOverdue: os.filter((o) => o.status === 'accepted' && overdueOffers.has(o.id)).length,
         dismissed: os.filter((o) => o.status === 'declined').length,
         expired: os.filter((o) => o.status === 'expired').length,
         help: ds.filter((d) => d.outcome === 'help').length,
@@ -182,6 +198,8 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         loansOver90Days: over90.size,
         defaultRateBps: loans.length ? Math.round((over90.size * 10_000) / loans.length) : 0,
         cardBillsMissed: statementsMissed,
+        bouncesThisMonth: (await db.auditLog.findMany({ where: { action: 'loan.emi_bounced' } })).filter((a) => daysPast((JSON.parse(a.detailsJson) as { simDate?: string }).simDate ?? today) <= 31).length,
+        membersOnRepaymentPlans: new Set(loans.filter((l) => l.kind === 'repayment_plan' && l.status === 'disbursed').map((l) => l.memberId)).size,
         membersShowingStrain: strained,
       },
     };
@@ -197,11 +215,11 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     })),
   }));
 
-  h.on(credApi.admin.resolveComplaint, async ({ params, body }) => {
+  h.on<typeof credApi.admin.resolveComplaint, StaffSession>(credApi.admin.resolveComplaint, async ({ params, body, auth }) => {
     const c = await db.complaint.findUnique({ where: { id: params.complaintId } });
     if (!c) throw notFound('Complaint');
     const updated = await db.complaint.update({ where: { id: c.id }, data: { status: 'resolved', resolution: body.resolution, resolvedAt: new Date() } });
-    await ctx.audit({ memberId: c.memberId, actor: 'admin', action: 'complaint.resolved', target: c.id, details: { resolution: body.resolution } });
+    await ctx.audit({ memberId: c.memberId, actor: 'admin', action: 'complaint.resolved', target: c.id, details: { resolution: body.resolution, staff: auth.name } });
     hub.member(c.memberId, { type: 'data.updated', data: { area: 'complaints' } });
     return { complaint: toComplaint(updated) };
   });
