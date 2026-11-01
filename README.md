@@ -59,7 +59,7 @@ pnpm install           # installs everything and generates both Prisma clients
 pnpm demo              # the way to start a demo (below)
 ```
 
-**`pnpm demo` is the documented way to start a demo.** It clears the Next.js caches, resets the seed data to the demo personas, starts all four apps and both APIs with `LOG_LEVEL=warn` and `DEMO_MODE=true` (output goes to `logs/demo.log`), then waits until every service reports green and prints the URLs. Wait for `✔ Demo ready` (about a minute on a first run). Press Ctrl+C to stop.
+**`pnpm demo` is the documented way to start a demo.** It stops any server left over from an earlier run on the demo ports, clears the Next.js caches, resets the seed data to the demo personas, starts all four apps and both APIs with `LOG_LEVEL=warn` and `DEMO_MODE=true` (output goes to `logs/demo.log`), then waits until every service reports green and prints the URLs. Wait for `✔ Demo ready` (about a minute on a first run). Press Ctrl+C to stop.
 
 For development, `pnpm seed` resets the data and `pnpm dev` starts everything with normal logging.
 
@@ -118,6 +118,7 @@ curl -X POST localhost:4000/sim/member-actions -H 'content-type: application/jso
 
 - **Port already in use:** stop whatever is using ports 3000–3003, 4000 or 4100. The ports are fixed by design.
 - **`Cannot find module './generated/...'`:** run `pnpm db:generate`. The Prisma clients are generated and not committed.
+- **`fetch failed` / `ECONNREFUSED :4100` (or :4000) on a page:** an app is running without its API, usually a server left over from an earlier run. Run `pnpm demo` again; it stops leftovers first.
 - **A page keeps reloading ("Fast Refresh") or looks stale:** stop and run `pnpm demo` again; it clears the Next.js caches.
 - **Something looks stuck after a lot of clicking:** press **Reset demo** in the control room (same as `pnpm seed`).
 - **Fonts fail to load on first run:** the apps load Google Fonts via `next/font`, which needs internet access the first time.

@@ -23,6 +23,38 @@ const SERVICES = [
 ];
 
 const step = (s) => console.log(`\n▸ ${s}`);
+const sh = (cmd) => {
+  try {
+    return execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  } catch {
+    return '';
+  }
+};
+
+// A server left over from an earlier run would answer /status as green while the fresh one
+// fails with EADDRINUSE, so the demo would look ready with stale or missing pieces.
+step('Freeing the demo ports');
+const listeners = () => SERVICES.flatMap(([name, url]) => sh(`lsof -nP -iTCP:${new URL(url).port} -sTCP:LISTEN -t`).split('\n').filter(Boolean).map((pid) => ({ name, url, pid: Number(pid) })));
+const foreign = [];
+for (const l of listeners()) {
+  const cwd = sh(`lsof -a -p ${l.pid} -d cwd -Fn`).split('\n').find((s) => s.startsWith('n'))?.slice(1) ?? '';
+  if (cwd === root || cwd.startsWith(root + path.sep)) {
+    console.log(`  stopping a leftover ${l.name} (pid ${l.pid})`);
+    try {
+      process.kill(l.pid, 'SIGTERM');
+    } catch {}
+  } else foreign.push(`${new URL(l.url).port} (pid ${l.pid}: ${sh(`ps -o command= -p ${l.pid}`).slice(0, 60)})`);
+}
+if (foreign.length) {
+  console.error(`\nThese ports are used by something outside this project; stop it and run pnpm demo again:\n  ${foreign.join('\n  ')}`);
+  process.exit(1);
+}
+for (let i = 0; i < 20 && listeners().length; i++) await new Promise((r) => setTimeout(r, 250));
+for (const l of listeners()) {
+  try {
+    process.kill(l.pid, 'SIGKILL');
+  } catch {}
+}
 
 step('Clearing Next.js caches');
 for (const app of ['cred', 'admin', 'shop', 'ecosystem']) rmSync(path.join(root, 'apps', app, '.next'), { recursive: true, force: true });
