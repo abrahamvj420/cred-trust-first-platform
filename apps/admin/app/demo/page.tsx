@@ -1,20 +1,23 @@
+import { ControlRoom, DemoSection } from './ControlRoom';
 import { ServiceGrid } from './ServiceGrid';
 
 export default function DemoControlRoom() {
   const demo = process.env.DEMO_MODE === 'true';
   return (
-    <main className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-10">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Demo control room</h1>
+    <main className="flex min-w-0 flex-1 flex-col gap-8 px-8 py-8">
+      <header className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight">Control room</h1>
         <p className="text-sm text-muted">
-          Service status. Persona switching, scenarios, time travel and reset arrive in M6.
-          {demo ? '' : ' DEMO_MODE is off, so the control room is disabled.'}
+          Drive the simulated world: every feature’s real-world trigger, time, personas and reset.{' '}
+          {demo ? 'DEMO_MODE is on.' : 'DEMO_MODE is off, so services refuse every action here.'}
         </p>
       </header>
-      <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">Services</h2>
+      <DemoSection title="Services">
         <ServiceGrid />
-      </section>
+      </DemoSection>
+      <DemoSection title="Triggers">
+        <ControlRoom />
+      </DemoSection>
     </main>
   );
 }

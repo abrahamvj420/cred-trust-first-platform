@@ -146,6 +146,29 @@ export const LenderEmiCollected = base(
   z.object({ loanRef: Id, clientRef: Id, n: z.number().int().positive(), amountPaise: PositivePaise, onTime: z.boolean() }),
 );
 
+/** An EMI couldn't be collected (not enough in the account); the lender retries next month. */
+export const LenderEmiBounced = base(
+  'lender.emi.bounced',
+  'lender',
+  z.object({ loanRef: Id, clientRef: Id, n: z.number().int().positive(), amountPaise: PositivePaise }),
+);
+
+/** Early repayment received: what's left of the loan (empty when closed). */
+export const LenderLoanPrepaid = base(
+  'lender.loan.prepaid',
+  'lender',
+  z.object({
+    loanRef: Id,
+    clientRef: Id,
+    prepaymentRef: Id,
+    amountPaise: PositivePaise,
+    chargesPaise: NonNegativePaise,
+    interestSavedPaise: NonNegativePaise,
+    closed: z.boolean(),
+    remaining: z.array(EmiInstallment),
+  }),
+);
+
 /** Card-Balance Switch: the rate steps down after on-time payments; remaining instalments are re-priced. */
 export const LenderLoanRepriced = base(
   'lender.loan.repriced',
@@ -183,9 +206,20 @@ export const InsurerPolicyRenewalDue = base(
     policyRef: Id,
     kind: PolicyKind,
     coverPaise: PositivePaise,
+    /** What the member will pay, after any wellness discount. */
     renewalPremiumPaise: PositivePaise,
+    basePremiumPaise: PositivePaise,
+    wellnessDiscountPaise: NonNegativePaise,
+    wellnessScore: z.number().int().min(0).max(100).nullable(),
     renewalDate: IsoDate,
   }),
+);
+
+/** The insurer renewed a policy and collected the premium (with any wellness discount applied). */
+export const InsurerPolicyRenewed = base(
+  'insurer.policy.renewed',
+  'insurer',
+  z.object({ policyRef: Id, renewedOn: IsoDate, premiumPaidPaise: NonNegativePaise, wellnessDiscountPaise: NonNegativePaise, nextRenewalDate: IsoDate }),
 );
 
 /** A policy bought through CRED was issued (clientRef = CRED's offer). Other policies reach CRED only through Account Aggregator. */
@@ -253,7 +287,10 @@ export const WebhookEvent = z.discriminatedUnion('type', [
   LenderEmiCollected,
   LenderLoanRepriced,
   LenderCollateralAlert,
+  LenderEmiBounced,
+  LenderLoanPrepaid,
   InsurerPolicyRenewalDue,
+  InsurerPolicyRenewed,
   InsurerPolicyIssued,
   InsurerClaimUpdated,
   FundhouseRedemptionCompleted,

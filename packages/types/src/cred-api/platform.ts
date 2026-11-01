@@ -16,7 +16,8 @@ import {
   ActivitySummary,
 } from '../domain';
 import { MemberStreamEvent, AdminStreamEvent } from '../events/sse';
-import { DecisionOutcome, FeatureKey, PermissionScope, PersonaKey } from '../enums';
+import { DecisionOutcome, FeatureKey, MemberAction, PermissionScope, PersonaKey, ReasonCode } from '../enums';
+import { Complaint } from '../domain';
 import { WebhookAck, WebhookEvent } from '../webhooks/events';
 
 // ── Privacy ───────────────────────────────────────────────────────────────────
@@ -97,6 +98,50 @@ export const RuleSetting = z.object({
 });
 export type RuleSetting = z.infer<typeof RuleSetting>;
 
+export const RuleSettingWithBounds = RuleSetting.extend({ min: z.number(), max: z.number(), changed: z.boolean(), defaultValue: z.number() });
+
+export const FunnelRow = z.object({
+  feature: FeatureKey,
+  decisions: z.number().int(),
+  offers: z.number().int(),
+  awaitingPermission: z.number().int(),
+  shown: z.number().int(),
+  accepted: z.number().int(),
+  dismissed: z.number().int(),
+  expired: z.number().int(),
+  help: z.number().int(),
+  available: z.number().int(),
+  blocked: z.array(z.object({ reason: ReasonCode, count: z.number().int() })),
+});
+
+export const AdminOverview = z.object({
+  simDate: z.string(),
+  members: z.number().int(),
+  kpis: z.object({
+    decisions: z.number().int(),
+    offersShown: z.number().int(),
+    accepted: z.number().int(),
+    acceptanceRateBps: z.number().int(),
+    blocked: z.number().int(),
+    help: z.number().int(),
+    memberGainsPaise: z.number().int(),
+    openComplaints: z.number().int(),
+  }),
+  funnel: z.array(FunnelRow),
+  gains: z.array(z.object({ source: z.string(), count: z.number().int(), gainPaise: z.number().int() })),
+  defaults: z.object({
+    activeLoans: z.number().int(),
+    loansWithOverdue: z.number().int(),
+    overdueInstalments: z.number().int(),
+    overduePaise: z.number().int(),
+    loansOver90Days: z.number().int(),
+    defaultRateBps: z.number().int(),
+    cardBillsMissed: z.number().int(),
+    membersShowingStrain: z.number().int(),
+  }),
+});
+export type AdminOverview = z.infer<typeof AdminOverview>;
+
 export const LadderTierSetting = z.object({
   tier: z.string(),
   requiredOnTimeMonths: z.number().int(),
@@ -173,8 +218,59 @@ export const adminEndpoints = {
     method: 'GET',
     path: '/admin/v1/rules',
     auth: 'admin',
-    summary: 'Engine rule settings (read-only until M6)',
-    response: z.object({ rules: z.array(RuleSetting), ladder: z.array(LadderTierSetting), editable: z.boolean() }),
+    summary: 'Engine rule settings in force, with their allowed range',
+    response: z.object({ rules: z.array(RuleSettingWithBounds), ladder: z.array(LadderTierSetting), editable: z.boolean() }),
+  }),
+  updateRule: endpoint({
+    method: 'PATCH',
+    path: '/admin/v1/rules/:key',
+    auth: 'admin',
+    summary: 'Change a rule live (validated; logged with who, from and to)',
+    params: z.object({ key: z.string() }),
+    body: z.object({ value: z.number().int(), reason: z.string().trim().min(3).max(200) }),
+    response: z.object({ rule: RuleSettingWithBounds }),
+  }),
+  resetRules: endpoint({
+    method: 'POST',
+    path: '/admin/v1/rules/reset',
+    auth: 'admin',
+    summary: 'Put every rule back to its default (logged)',
+    body: z.object({ reason: z.string().trim().min(3).max(200) }),
+    response: Ok,
+  }),
+  overview: endpoint({
+    method: 'GET',
+    path: '/admin/v1/overview',
+    auth: 'admin',
+    summary: 'Offer funnel by feature, member gains, defaults, complaints',
+    response: AdminOverview,
+  }),
+  complaints: endpoint({
+    method: 'GET',
+    path: '/admin/v1/complaints',
+    auth: 'admin',
+    summary: 'Member complaints',
+    query: MemberFilter,
+    response: z.object({ complaints: z.array(Complaint.extend({ memberId: Id, memberName: z.string() })) }),
+  }),
+  resolveComplaint: endpoint({
+    method: 'POST',
+    path: '/admin/v1/complaints/:complaintId/resolve',
+    auth: 'admin',
+    summary: 'Resolve a complaint with a note to the member (logged)',
+    params: z.object({ complaintId: Id }),
+    body: z.object({ resolution: z.string().trim().min(5).max(600) }),
+    response: z.object({ complaint: Complaint }),
+  }),
+  partnerCalls: endpoint({
+    method: 'GET',
+    path: '/admin/v1/partner-calls',
+    auth: 'admin',
+    summary: 'Calls CRED made to partners (lender, insurer, AA, bank …)',
+    query: MemberFilter,
+    response: z.object({
+      calls: z.array(z.object({ id: Id, partner: z.string(), method: z.string(), path: z.string(), status: z.number().int(), ms: z.number().int(), memberId: Id.nullable(), at: IsoDateTime })),
+    }),
   }),
   stream: endpoint({
     method: 'GET',
@@ -219,6 +315,14 @@ export const platformEndpoints = {
     auth: 'demo',
     summary: 'Reset cred.db to the seed personas (DEMO_MODE only)',
     response: Ok,
+  }),
+  simMemberAction: endpoint({
+    method: 'POST',
+    path: '/sim/member-actions',
+    auth: 'demo',
+    summary: 'Do something in the app on a persona’s behalf (control room; DEMO_MODE only)',
+    body: z.object({ action: MemberAction, personaKey: PersonaKey }),
+    response: z.object({ action: MemberAction, personaKey: PersonaKey, note: z.string() }),
   }),
   simSwitchPersona: endpoint({
     method: 'POST',

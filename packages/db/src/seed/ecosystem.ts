@@ -3,6 +3,7 @@ import type { EcosystemDb } from '../ecosystem';
 import { BANK, FUND_HOUSE, GOLD_PRICE_PER_GRAM_PAISE, INSURER, LENDERS, OTHER_VPAS, SHOPKART } from './catalog';
 import { wipeAllTables } from './reset';
 import { at } from './util';
+import { summariseActivityWeek } from './wearable';
 import type { PersonaWorld } from './world';
 
 export const DEMO_UPI_PIN = '1234';
@@ -128,6 +129,10 @@ export async function seedEcosystem(db: EcosystemDb, worlds: PersonaWorld[]): Pr
     if (f.goldGrams) {
       await db.goldHolding.create({ data: { id: `gold_${f.key}`, personId: w.ids.person, ...f.goldGrams } });
     }
+    // Members who share activity with CRED have their latest score with the insurer of a floater bought through CRED
+    const shares = !!f.wearable && f.cred.permissions.some((x) => x.scope === 'health_data');
+    const weeks = shares ? [0, 1, 2, 3].map((k) => summariseActivityWeek(w.stepDays[k * 7]!.date, w.stepDays.slice(k * 7, k * 7 + 7))) : [];
+    const score = weeks.length ? Math.round(weeks.reduce((a, x) => a + x.score, 0) / weeks.length) : null;
     for (const [i, pol] of (f.policies ?? []).entries()) {
       await db.policy.create({
         data: {
@@ -141,6 +146,7 @@ export async function seedEcosystem(db: EcosystemDb, worlds: PersonaWorld[]): Pr
           membersCoveredJson: JSON.stringify(pol.members),
           renewalDate: pol.renewalDate,
           clientRef: pol.viaCred ? w.ids.member : null,
+          wellnessScore: pol.viaCred ? score : null,
         },
       });
     }

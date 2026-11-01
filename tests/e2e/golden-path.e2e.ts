@@ -212,8 +212,9 @@ describe('M3 rules end to end', () => {
 
   it('admin can read every rule setting', async () => {
     const { rules, editable } = await cred(credApi.admin.rules);
-    expect(editable).toBe(false);
+    expect(editable).toBe(true); // M6: editable live (see the M6 admin tests)
     const byKey = Object.fromEntries(rules.map((r) => [r.key, r]));
+    for (const r of rules) expect(r.value).toBeGreaterThanOrEqual(r.min), expect(r.value).toBeLessThanOrEqual(r.max);
     expect(byKey.carryRepaymentMultipleBps!.display).toBe('1.5×');
     expect(byKey.monthlyProactiveOfferCap!.value).toBe(3);
     expect(byKey.permissionReaskDays!.display).toBe('90 days');

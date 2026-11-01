@@ -95,14 +95,30 @@ describe('protection gap (feature 6)', () => {
   it('a car with only third-party cover has a gap; comprehensive or own-damage closes it', () => {
     const areas = assessGap([employer, tp], []);
     expect(areas.find((a) => a.area === 'motor')).toMatchObject({ covered: false, gapPaise: 9_20_000_00 });
+    const comp = assessGap([employer, { ...tp, kind: 'motor_comprehensive' }], []);
+    const r = evaluateProtectionGap(fullPayer(), { linked: true, areas: comp, focus: 'motor', trigger: 'Your new vehicle' }, null);
+    if (r.kind !== 'decision') throw new Error();
+    expect(r.decision.reasons).toEqual(['already_covered']);
     const covered = assessGap([employer, tp, { ...tp, ref: 'p5', kind: 'motor_own_damage' }], []);
     expect(covered.find((a) => a.area === 'motor')!.covered).toBe(true);
   });
 
-  it('policies not linked → we can’t check, and say so', () => {
-    const r = evaluateProtectionGap(fullPayer(), { linked: false, areas: [], focus: 'health', trigger: 'Your new car' }, null);
+  it('policies not linked → we can’t check, and say so (no nudge to link on a proactive check)', () => {
+    const r = evaluateProtectionGap(fullPayer(), { linked: false, areas: [], focus: 'health', trigger: 'Your policy renewal' }, null);
     if (r.kind !== 'decision') throw new Error();
     expect(r.decision.reasons).toEqual(['needs_data']);
+    expect(r.decision.explanation).not.toMatch(/link them/);
+    const asked = evaluateProtectionGap(fullPayer(), { linked: false, areas: [], focus: 'health', trigger: 'You asked us to check' }, null, { origin: 'member_initiated' });
+    if (asked.kind !== 'decision') throw new Error();
+    expect(asked.decision.explanation).toMatch(/link them/);
+  });
+
+  it('a new car whose cover we can’t see: ask what came with it, never assume a gap (and never fall back to health)', () => {
+    const areas = assessGap([employer, floater], ['spouse']);
+    const r = evaluateProtectionGap(fullPayer(), { linked: true, areas, focus: 'motor', trigger: 'Your new vehicle' }, null);
+    if (r.kind !== 'decision') throw new Error();
+    expect(r.decision.reasons).toEqual(['needs_data']);
+    expect(r.decision.explanation).toMatch(/Tell us what cover came with it/);
   });
 
   it('recommends the cheapest way to close the gap (proactive: Smart Savings applies)', () => {

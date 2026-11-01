@@ -1,9 +1,10 @@
-import { billOutcome, ladderAfter, tierLabel, wellnessReward } from '@cred/engine';
+import { billOutcome, ladderAfter, tierLabel } from '@cred/engine';
 import { CreditTier, formatBps, formatInr, type WebhookEvent, type WebhookEventOf } from '@cred/types';
 import { onConsentUpdated, refreshFromAa } from './aa';
 import { dataUpdated, raiseAlert } from './alerts';
 import type { Ctx } from './context';
-import { activeRules, recordLadderChange, runBigSpend, runProtectionGap } from './engine-runner';
+import { recordLadderChange, runBigSpend, runProtectionGap } from './engine-runner';
+import { shareWellnessScore } from './wellness';
 import { toClaim, toLoan, toTxn } from './mappers';
 
 const isUniqueViolation = (e: unknown) => typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002';
@@ -56,6 +57,12 @@ async function dispatch(ctx: Ctx, event: WebhookEvent): Promise<string | null> {
       return onRepriced(ctx, event);
     case 'lender.collateral.alert':
       return onCollateral(ctx, event);
+    case 'lender.emi.bounced':
+      return onEmiBounced(ctx, event);
+    case 'lender.loan.prepaid':
+      return onPrepaid(ctx, event);
+    case 'insurer.policy.renewed':
+      return onRenewed(ctx, event);
     case 'upi.transaction.completed':
       return onUpiCompleted(ctx, event);
     case 'aa.consent.updated':
@@ -313,14 +320,13 @@ async function onRenewalDue(ctx: Ctx, event: WebhookEventOf<'insurer.policy.rene
   const policy = await db.insurancePolicy.findUnique({ where: { externalRef: d.policyRef } });
   if (!policy) return null;
   const memberId = policy.memberId;
-  const weeks = await db.activitySummary.findMany({ where: { memberId }, orderBy: { weekStart: 'desc' }, take: 4 });
-  const reward = policy.kind === 'health_family_floater' ? wellnessReward(d.renewalPremiumPaise, weeks.map((w) => w.score), 10, activeRules()) : null;
   await raiseAlert(ctx, memberId, {
     kind: 'renewal',
     title: `${policy.productName} renews on ${new Date(`${d.renewalDate}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' })}`,
     body:
-      `Renewal premium ${formatInr(d.renewalPremiumPaise)}` +
-      (reward && reward.rewardPaise > 0 ? `, less a wellness reward of ${formatInr(reward.rewardPaise)} for your activity score of ${reward.averageScore}.` : '.') +
+      (d.wellnessDiscountPaise > 0
+        ? `Renewal premium ${formatInr(d.renewalPremiumPaise)}: ${formatInr(d.basePremiumPaise)} less a wellness reward of ${formatInr(d.wellnessDiscountPaise)} for your activity score of ${d.wellnessScore}.`
+        : `Renewal premium ${formatInr(d.renewalPremiumPaise)}.`) +
       ' We’ve checked whether your cover still fits your family.',
     href: '/protect',
     sourceRef: event.id,
@@ -416,6 +422,85 @@ async function onActivity(ctx: Ctx, event: WebhookEventOf<'wearable.activity.sum
     update: { avgDailySteps: s.avgDailySteps, activeDays: s.activeDays, score: s.score },
     create: { memberId: link.memberId, ...s },
   });
+  await shareWellnessScore(ctx, link.memberId);
   dataUpdated(ctx, link.memberId, 'wellness');
   return link.memberId;
+}
+
+/** An EMI bounced (not enough in the account). Supportive: what happened and what to do. */
+async function onEmiBounced(ctx: Ctx, event: WebhookEventOf<'lender.emi.bounced'>): Promise<string | null> {
+  const { db } = ctx;
+  const loan = await db.loan.findUnique({ where: { loanRef: event.data.loanRef } });
+  if (!loan) return null;
+  await db.emiInstallment.updateMany({ where: { loanId: loan.id, n: event.data.n }, data: { status: 'overdue' } });
+  await ctx.audit({ memberId: loan.memberId, actor: 'partner', action: 'loan.emi_bounced', target: loan.id, details: { n: event.data.n, amountPaise: event.data.amountPaise } });
+  await raiseAlert(ctx, loan.memberId, {
+    kind: 'loan',
+    title: `Your ${loan.lenderName} EMI couldn’t be collected`,
+    body: `There wasn’t enough in your account for EMI ${event.data.n} of ${formatInr(event.data.amountPaise)}. ${loan.lenderName} will try again next month. If money is tight, talk to us and we’ll help you plan.`,
+    href: `/loans/${loan.id}`,
+    sourceRef: event.id,
+  });
+  const full = await db.loan.findUniqueOrThrow({ where: { id: loan.id }, include: { installments: true } });
+  ctx.hub.member(loan.memberId, { type: 'loan.updated', data: { loan: toLoan(full) } });
+  return loan.memberId;
+}
+
+/** The lender confirmed an early repayment: replace what's left of the schedule, record the interest saved. */
+async function onPrepaid(ctx: Ctx, event: WebhookEventOf<'lender.loan.prepaid'>): Promise<string | null> {
+  const { db } = ctx;
+  const d = event.data;
+  const loan = await db.loan.findUnique({ where: { loanRef: d.loanRef } });
+  if (!loan) return null;
+  await db.$transaction([
+    db.emiInstallment.deleteMany({ where: { loanId: loan.id, status: { not: 'paid' } } }),
+    db.emiInstallment.createMany({ data: d.remaining.map((i) => ({ loanId: loan.id, n: i.n, dueDate: i.dueDate, amountPaise: i.amountPaise, principalPaise: i.principalPaise, interestPaise: i.interestPaise, status: 'upcoming' })) }),
+    db.loan.update({
+      where: { id: loan.id },
+      data: { status: d.closed ? 'closed' : loan.status, interestSavedPaise: { increment: d.interestSavedPaise }, ...(d.remaining[0] ? { emiPaise: d.remaining[0].amountPaise } : {}) },
+    }),
+  ]);
+  if (d.closed && loan.collateralJson) {
+    const c = JSON.parse(loan.collateralJson) as { holdingId: string; units: number | null };
+    const h = await db.holding.findUnique({ where: { id: c.holdingId } });
+    if (h) await db.holding.update({ where: { id: h.id }, data: { pledgedUnits: Math.max(0, h.pledgedUnits - (c.units ?? 0)) } });
+    dataUpdated(ctx, loan.memberId, 'holdings');
+  }
+  await ctx.audit({ memberId: loan.memberId, actor: 'partner', action: d.closed ? 'loan.closed_early' : 'loan.part_prepaid', target: loan.id, details: { amountPaise: d.amountPaise, interestSavedPaise: d.interestSavedPaise, chargesPaise: d.chargesPaise } });
+  await raiseAlert(ctx, loan.memberId, {
+    kind: 'loan',
+    title: d.closed ? `Your ${loan.lenderName} loan is fully repaid` : `${formatInr(d.amountPaise)} repaid early`,
+    body: `${loan.lenderName} confirmed your payment of ${formatInr(d.amountPaise)}. You save ${formatInr(d.interestSavedPaise)} in interest${d.closed ? '.' : `, and your last EMI is now ${d.remaining.at(-1)?.dueDate ?? ''}.`}`,
+    href: `/loans/${loan.id}`,
+    sourceRef: event.id,
+  });
+  const full = await db.loan.findUniqueOrThrow({ where: { id: loan.id }, include: { installments: true } });
+  ctx.hub.member(loan.memberId, { type: 'loan.updated', data: { loan: toLoan(full) } });
+  return loan.memberId;
+}
+
+/** The insurer renewed a policy; any wellness discount it applied is the member's saving. */
+async function onRenewed(ctx: Ctx, event: WebhookEventOf<'insurer.policy.renewed'>): Promise<string | null> {
+  const { db } = ctx;
+  const d = event.data;
+  const policy = await db.insurancePolicy.findUnique({ where: { externalRef: d.policyRef } });
+  if (!policy) return null;
+  if (policy.lastRenewedOn !== d.renewedOn) {
+    await db.insurancePolicy.update({
+      where: { id: policy.id },
+      data: { renewalDate: d.nextRenewalDate, lastRenewedOn: d.renewedOn, lastPremiumPaidPaise: d.premiumPaidPaise, wellnessSavedPaise: { increment: d.wellnessDiscountPaise } },
+    });
+    await ctx.audit({ memberId: policy.memberId, actor: 'partner', action: 'policy.renewed', target: policy.id, details: { premiumPaidPaise: d.premiumPaidPaise, wellnessDiscountPaise: d.wellnessDiscountPaise } });
+    await raiseAlert(ctx, policy.memberId, {
+      kind: 'renewal',
+      title: `${policy.productName} renewed`,
+      body:
+        `${formatInr(d.premiumPaidPaise)} paid for another year.` +
+        (d.wellnessDiscountPaise > 0 ? ` Your activity saved you ${formatInr(d.wellnessDiscountPaise)} on the premium.` : ''),
+      href: '/protect/wellness',
+      sourceRef: event.id,
+    });
+  }
+  dataUpdated(ctx, policy.memberId, 'wellness');
+  return policy.memberId;
 }

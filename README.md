@@ -87,7 +87,7 @@ pnpm screenshots m5    # with pnpm dev up: sweeps every screen for all personas,
 
 ### Simulating the world (DEMO_MODE only)
 
-The control room drives these from M6; until then, call them directly:
+The control room at http://localhost:3001/demo does all of this with buttons: service status, persona switch (the CRED app follows), a trigger for every feature, advance a month, reset. The same endpoints by hand:
 
 ```bash
 # Advance the clock a month: salaries, card spend, each persona's bill habit, statements,
@@ -96,7 +96,11 @@ curl -X POST localhost:4100/sim/v1/clock/advance -H 'content-type: application/j
 
 # Fire a real-world event for a persona: big_purchase, insurer_renewal, wearable_sync,
 # market_fall, new_vehicle, claim_update
-curl -X POST localhost:4100/sim/v1/scenarios -H 'content-type: application/json' -d '{"scenario":"insurer_renewal","personaKey":"priya"}'
+curl -X POST localhost:4100/sim/v1/scenarios -H 'content-type: application/json' -d '{"scenario":"new_vehicle","personaKey":"priya","dealerCover":"third_party"}'
+
+# Do something in the app as a member: partial_bill_payment, fund_sale, verify_salary,
+# link_portfolio, link_policies, add_parents, connect_wearable
+curl -X POST localhost:4000/sim/member-actions -H 'content-type: application/json' -d '{"action":"partial_bill_payment","personaKey":"kabir"}'
 ```
 
 ### Troubleshooting

@@ -1,6 +1,7 @@
 import { creditLine, type MemberSnapshot } from '@cred/engine';
 import { CreditTier, FeatureKey } from '@cred/types';
 import type { Ctx } from './context';
+import { activeRules } from './rules';
 
 export const ACTIVE_OFFER_STATUSES = ['awaiting_permission', 'shown'];
 
@@ -50,7 +51,7 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
     verifiedMonthlyIncomePaise: member.income?.monthlyNetPaise ?? null,
     existingEmiPaise: member.loans.reduce((a, l) => a + l.emiPaise, 0),
     // The limit in force: the ladder tier's, raised by verified salary
-    ladder: { tier, limitPaise: creditLine(tier, member.income?.monthlyNetPaise ?? null, false).limitPaise },
+    ladder: { tier, limitPaise: creditLine(tier, member.income?.monthlyNetPaise ?? null, false, activeRules()).limitPaise },
     offers: {
       activeOfferId: active?.id ?? null,
       proactiveThisMonth: member.offers.filter((o) => o.origin === 'proactive' && o.simDate.startsWith(month)).length,

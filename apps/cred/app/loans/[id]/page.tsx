@@ -1,7 +1,7 @@
 'use client';
 
 import { credApi, formatBps } from '@cred/types';
-import { Badge, Card, EmptyState, ErrorState, LoadingScreen, Money, SectionHeader } from '@cred/ui';
+import { Badge, ButtonLink, Card, EmptyState, ErrorState, LoadingScreen, Money, SectionHeader } from '@cred/ui';
 import { useParams } from 'next/navigation';
 import { longDate, shortDate } from '@/lib/format';
 import { useApi } from '@/lib/live';
@@ -24,7 +24,7 @@ export default function LoanPage() {
   const paid = l?.schedule.filter((i) => i.status === 'paid').length ?? 0;
   const next = l?.schedule.find((i) => i.status !== 'paid');
   return (
-    <Screen title="EMI schedule" back="/loans">
+    <Screen title="EMI schedule" back="/loans" footer={l?.status === 'disbursed' ? <ButtonLink href={`/loans/${id}/repay`} variant="secondary" block>Repay early</ButtonLink> : null}>
       {q.error && !l ? (
         <ErrorState message={q.error} onRetry={q.reload} />
       ) : !l ? (
@@ -58,6 +58,12 @@ export default function LoanPage() {
               </div>
             </dl>
           </Card>
+          {l.interestSavedPaise > 0 ? (
+            <Card className="flex items-baseline justify-between">
+              <span className="text-callout text-muted">Interest saved by repaying early</span>
+              <Money paise={l.interestSavedPaise} size="headline" className="text-positive" />
+            </Card>
+          ) : null}
           {steps.length ? (
             <Card className="flex flex-col gap-2">
               <p className="text-headline">Your rate steps down when you pay on time</p>

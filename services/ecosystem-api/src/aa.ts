@@ -87,13 +87,7 @@ export function aaHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       await ctx.outbox.emit('aa.consent.updated', { consentHandle: c.consentHandle, consentId: null, status: 'REJECTED', fiTypes });
       return { status: 'REJECTED' as const, redirectUrl: back('rejected') };
     }
-    const allowed = new Set((await linkable(ctx, c.personId, fiTypes)).map((a) => a.accountRef));
-    const chosen = body.accountRefs.filter((r) => allowed.has(r));
-    if (!chosen.length) throw new HttpError(422, 'no_accounts', 'Choose at least one account to share');
-    const consentId = `aac_${randomUUID()}`;
-    await db.aaConsentRequest.update({ where: { id: c.id }, data: { status: 'ACTIVE', consentId, accountRefsJson: JSON.stringify(chosen), decidedAt: new Date() } });
-    await ctx.outbox.emit('aa.consent.updated', { consentHandle: c.consentHandle, consentId, status: 'ACTIVE', fiTypes });
-    await ctx.outbox.emit('aa.fi.ready', { consentHandle: c.consentHandle, consentId, sessionId: `ses_${randomUUID()}` });
+    await approveConsent(ctx, c.consentHandle, body.accountRefs);
     return { status: 'ACTIVE' as const, redirectUrl: back('approved') };
   });
 
@@ -110,6 +104,20 @@ export function aaHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     if (c.status !== 'ACTIVE') throw new HttpError(403, 'consent_not_active', `Consent is ${c.status}`);
     return buildFiData(ctx, c);
   });
+}
+
+/** Approve a pending request for the accounts chosen (all offered, when none are given), then tell the FIU data is ready. */
+export async function approveConsent(ctx: Ctx, consentHandle: string, accountRefs?: string[]): Promise<void> {
+  const { db } = ctx;
+  const c = await db.aaConsentRequest.findUniqueOrThrow({ where: { consentHandle } });
+  const fiTypes = AaFiType.array().parse(JSON.parse(c.fiTypesJson));
+  const offered = (await linkable(ctx, c.personId, fiTypes)).map((a) => a.accountRef);
+  const chosen = accountRefs ? accountRefs.filter((r) => offered.includes(r)) : offered;
+  if (!chosen.length) throw new HttpError(422, 'no_accounts', 'Choose at least one account to share');
+  const consentId = `aac_${randomUUID()}`;
+  await db.aaConsentRequest.update({ where: { id: c.id }, data: { status: 'ACTIVE', consentId, accountRefsJson: JSON.stringify(chosen), decidedAt: new Date() } });
+  await ctx.outbox.emit('aa.consent.updated', { consentHandle, consentId, status: 'ACTIVE', fiTypes });
+  await ctx.outbox.emit('aa.fi.ready', { consentHandle, consentId, sessionId: `ses_${randomUUID()}` });
 }
 
 async function buildFiData(ctx: Ctx, c: { consentId: string | null; personId: string; fiTypesJson: string; accountRefsJson: string; dataRangeMonths: number }): Promise<FiData> {

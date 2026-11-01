@@ -23,6 +23,7 @@ const milestone = process.argv[2] ?? 'm4';
 const OUT = path.join(root, 'docs/screenshots', milestone);
 const CRED = 'http://localhost:3000';
 const CRED_API = 'http://localhost:4000';
+const ADMIN = 'http://localhost:3001';
 const ECO_API = 'http://localhost:4100';
 const CHROME = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PERSONAS = ['aarav', 'priya', 'sneha', 'kabir', 'rohan'];
@@ -63,8 +64,8 @@ async function drain() {
   await until(async () => (await http(`${ECO_API}/sim/v1/outbox`)).pending === 0, 'outbox drained', 20000);
   await new Promise((r) => setTimeout(r, 600));
 }
-const scenario = async (s, personaKey) => {
-  await http(`${ECO_API}/sim/v1/scenarios`, { method: 'POST', body: { scenario: s, personaKey } });
+const scenario = async (s, personaKey, dealerCover = 'comprehensive') => {
+  await http(`${ECO_API}/sim/v1/scenarios`, { method: 'POST', body: { scenario: s, personaKey, dealerCover } });
   await drain();
 };
 const advance = async (months = 1) => {
@@ -84,7 +85,7 @@ async function until(fn, what, ms = 15000) {
 
 // ── Browser helpers ─────────────────────────────────────────────────────────
 const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, protocolTimeout: 60000 });
-const page = await browser.newPage();
+let page = await browser.newPage();
 await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
 let pageErrors = [];
 page.on('pageerror', (e) => pageErrors.push(e.message));
@@ -122,13 +123,37 @@ async function axe(label) {
 }
 
 async function visit(url, label, { shot, expectError = false } = {}) {
+  if (process.env.SHOTS_DEBUG) console.log('  →', label);
   pageErrors = [];
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  // The dev server occasionally reloads a page mid-navigation (detached frame): retry
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
+      break;
+    } catch (e) {
+      if (attempt >= 2) throw e;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
   await settle();
   await check(label, { shot, expectError });
 }
 
-async function check(label, { shot, expectError = false } = {}) {
+async function check(label, opts = {}, attempt = 0) {
+  try {
+    return await checkOnce(label, opts);
+  } catch (e) {
+    // A freshly started dev server compiles routes on first visit and may reload the page mid-check
+    if (attempt < 2 && /Execution context was destroyed|detached Frame/.test(String(e))) {
+      await new Promise((r) => setTimeout(r, 1500));
+      await settle();
+      return check(label, opts, attempt + 1);
+    }
+    throw e;
+  }
+}
+
+async function checkOnce(label, { shot, expectError = false } = {}) {
   const text = await page.evaluate(() => document.body.innerText);
   if (!expectError && text.includes('Something didn’t load')) failures.push(`${label}: shows an error state`);
   for (const e of pageErrors) failures.push(`${label}: page error: ${e}`);
@@ -199,6 +224,13 @@ for (const key of PERSONAS) {
   await visit(`${CRED}/protect/wellness`, `${key} wellness`, { shot: key === 'priya' ? 'm5-25-wellness' : first ? 'm5-26-wellness-connect' : undefined });
   await visit(`${CRED}/protect/claims`, `${key} claims`);
   await visit(`${CRED}/alerts`, `${key} alerts`, { shot: first ? 'm5-40-alerts-empty' : undefined });
+  // M6 screens
+  await visit(`${CRED}/profile/privacy`, `${key} privacy`, { shot: first ? 'm6-01-privacy' : undefined });
+  await visit(`${CRED}/profile/privacy/knows`, `${key} what cred knows`, { shot: key === 'priya' ? 'm6-02-what-cred-knows' : undefined });
+  await visit(`${CRED}/permissions`, `${key} permissions m6`, { shot: key === 'priya' ? 'm6-03-permissions-aa-links' : undefined });
+  await visit(`${CRED}/profile/privacy/delete`, `${key} delete`, { shot: first ? 'm6-04-delete' : undefined });
+  await visit(`${CRED}/help`, `${key} help`);
+  await visit(`${CRED}/protect/vehicle`, `${key} vehicle check`);
   log(`${key}: all screens render`);
 }
 
@@ -487,7 +519,7 @@ await visit(`${CRED}/cards/not-a-card`, 'error state', { shot: '28-error-state',
   await visit(`${CRED}/offers/${offerId}`, 'gap compare', { shot: 'm5-28-gap-topup' });
   await reset();
   const t2 = await signIn('priya');
-  await scenario('new_vehicle', 'priya');
+  await scenario('new_vehicle', 'priya', 'third_party');
   await until(async () => (await http(`${CRED_API}/v1/offers`, { headers: asMember(t2) })).active, 'motor offer');
   await visit(`${CRED}/`, 'home motor offer', { shot: 'm5-29-home-motor-gap' });
   log('protection gap: renewal → top-up; new car → own-damage cover');
@@ -525,6 +557,183 @@ await visit(`${CRED}/cards/not-a-card`, 'error state', { shot: '28-error-state',
   await check('rohan help after part payment', { shot: 'm5-39-home-help-switch' });
   await visit(`${CRED}/profile/data`, 'rohan decisions', { shot: 'm5-41-decisions' });
   log('rohan: help instead of a balance switch');
+}
+
+// ── M6 flows ────────────────────────────────────────────────────────────────
+
+/** Desktop console: wider viewport, same checks. */
+async function adminVisit(url, label, shot) {
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  pageErrors = [];
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await until(() => page.evaluate(() => !document.body.innerText.includes('Loading…') && !!document.querySelector('main')), `${label} loaded`, 20000);
+  await new Promise((r) => setTimeout(r, 700));
+  const text = await page.evaluate(() => document.body.innerText);
+  if (/unreachable|Failed to fetch/.test(text)) failures.push(`${label}: console shows an error`);
+  for (const e of pageErrors) failures.push(`${label}: page error: ${e}`);
+  pageErrors = [];
+  await axe(label);
+  if (shot) {
+    const h = await page.evaluate(() => document.documentElement.scrollHeight);
+    await page.setViewport({ width: 1440, height: Math.min(Math.max(900, h), 4000), deviceScaleFactor: 1 });
+    await new Promise((r) => setTimeout(r, 150));
+    await page.screenshot({ path: path.join(OUT, `${shot}.png`) });
+  }
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+}
+
+// Early repayment: Aarav's laptop EMI, part repaid
+{
+  await reset();
+  const token = await signIn('aarav');
+  await buy('aarav', 1_50_000_00, 'Aero 14 Laptop');
+  await until(async () => (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active, 'offer');
+  await http(`${CRED_API}/v1/permissions`, { method: 'POST', headers: asMember(token), body: { scope: 'smart_savings', context: 'demo', explicit: true } });
+  const offer = (await http(`${CRED_API}/v1/offers`, { headers: asMember(token) })).active;
+  const acc = await http(`${CRED_API}/v1/offers/${offer.id}/accept`, { method: 'POST', headers: asMember(token), body: { option: 'emi', keyFactsAcknowledged: true } });
+  await http(`${CRED_API}/v1/offers/${offer.id}/confirm`, { method: 'POST', headers: asMember(token), body: { otp: acc.otp.demoOtp } });
+  await drain();
+  const loan = (await http(`${CRED_API}/v1/loans`, { headers: asMember(token) })).loans[0];
+  await visit(`${CRED}/loans/${loan.id}/repay`, 'repay');
+  await clickText('Part of it', 'label');
+  await page.waitForSelector('input[inputmode=numeric]');
+  await page.type('input[inputmode=numeric]', '50000');
+  await waitText('less interest');
+  await settle();
+  await check('repay quote', { shot: 'm6-05-repay-quote' });
+  await clickText('from my bank', 'button');
+  await until(() => page.evaluate(() => !location.pathname.endsWith('/repay')), 'back to loan', 20000);
+  await drain();
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await settle();
+  await check('loan after repay', { shot: 'm6-06-loan-after-repay' });
+  log('early repayment: quote → pay → lender confirms, interest saved shown');
+}
+
+// Car cover check: Aarav (policies not linked) buys a car; CRED asks; he says third-party only
+{
+  await reset();
+  await signIn('aarav');
+  await scenario('new_vehicle', 'aarav', 'third_party');
+  await visit(`${CRED}/alerts`, 'car alert', { shot: 'm6-07-alert-car-check' });
+  await visit(`${CRED}/protect/vehicle`, 'vehicle form');
+  const inputs = await page.$$('main input:not([type=radio])');
+  await inputs[0].type('Velocity Aura 1.2');
+  await inputs[1].type('KA 01 AB 1234');
+  await inputs[2].type('920000');
+  await clickText('Third-party only', 'label');
+  await settle();
+  await check('vehicle form', { shot: 'm6-08-car-cover-form' });
+  await clickText('Check my cover', 'button');
+  await waitText('There’s a gap', 20000);
+  await settle();
+  await check('car gap', { shot: 'm6-09-car-cover-gap' });
+  log('car cover check: asked, not assumed');
+}
+
+// Wellness reward applied at renewal (Priya's floater renews on 25 Nov)
+{
+  await reset();
+  await signIn('priya');
+  await advance();
+  await visit(`${CRED}/protect/wellness`, 'wellness saved', { shot: 'm6-10-wellness-saved' });
+  log('wellness: saving applied at renewal');
+}
+
+// Complaint → admin resolves → member sees the reply
+{
+  await reset();
+  await signIn('kabir');
+  await visit(`${CRED}/help`, 'help');
+  await clickText('A suggestion or offer', 'label');
+  await page.type('main input:not([type=radio])', 'I didn’t understand why I was offered an EMI after paying part of my bill.');
+  await clickText('Send', 'button');
+  await waitText('With our team');
+  await settle();
+  await check('complaint raised', { shot: 'm6-11-complaint-raised' });
+  await adminVisit(`${ADMIN}/complaints`, 'admin complaints', 'm6-30-admin-complaints');
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await page.type('textarea', 'Paying part of a bill leaves a balance that carries at 3.5% a month; the switch costs less. It’s only shown with Smart Savings on, and you can say no thanks.');
+  await clickText('Resolve', 'button');
+  await waitText('Reply:');
+  await signIn('kabir');
+  await visit(`${CRED}/help`, 'complaint answered', { shot: 'm6-12-complaint-answered' });
+  log('complaints: raised → resolved → reply shown');
+}
+
+// Delete my data (Sneha, with a loan against her fund: retained)
+{
+  await reset();
+  const token = await signIn('sneha');
+  const { holdings } = await http(`${CRED_API}/v1/wealth/holdings`, { headers: asMember(token) });
+  const fund = holdings.find((h) => h.name.startsWith('Meridian Flexi'));
+  const r = await http(`${CRED_API}/v1/wealth/sell-intents`, { method: 'POST', headers: asMember(token), body: { holdingId: fund.id, amountNeededPaise: 2_00_000_00, months: 12 } });
+  const acc = await http(`${CRED_API}/v1/offers/${r.offerId}/accept`, { method: 'POST', headers: asMember(token), body: { option: 'loan', keyFactsAcknowledged: true } });
+  await http(`${CRED_API}/v1/offers/${r.offerId}/confirm`, { method: 'POST', headers: asMember(token), body: { otp: acc.otp.demoOtp } });
+  await drain();
+  await visit(`${CRED}/profile/privacy/delete`, 'delete');
+  await page.type('main input', 'delete');
+  await clickText('Delete my data', 'button');
+  await waitText('Your data is deleted', 20000);
+  await settle();
+  await check('deleted', { shot: 'm6-13-deleted-retained' });
+  log('delete my data: deleted, loan retained and explained');
+}
+
+// Admin console: a busy world first
+{
+  await reset();
+  const t = await login('aarav');
+  await buy('aarav', 1_50_000_00, 'Aero 14 Laptop');
+  await until(async () => (await http(`${CRED_API}/v1/offers`, { headers: asMember(t) })).active, 'offer');
+  await http(`${CRED_API}/v1/permissions`, { method: 'POST', headers: asMember(t), body: { scope: 'smart_savings', context: 'demo', explicit: true } });
+  const o = (await http(`${CRED_API}/v1/offers`, { headers: asMember(t) })).active;
+  const acc = await http(`${CRED_API}/v1/offers/${o.id}/accept`, { method: 'POST', headers: asMember(t), body: { option: 'emi', keyFactsAcknowledged: true } });
+  await http(`${CRED_API}/v1/offers/${o.id}/confirm`, { method: 'POST', headers: asMember(t), body: { otp: acc.otp.demoOtp } });
+  await buy('rohan', 1_50_000_00, 'Aero 14 Laptop');
+  await http(`${CRED_API}/sim/member-actions`, { method: 'POST', body: { action: 'partial_bill_payment', personaKey: 'kabir' } });
+  await scenario('insurer_renewal', 'priya');
+  await http(`${CRED_API}/sim/member-actions`, { method: 'POST', body: { action: 'fund_sale', personaKey: 'sneha' } });
+  await advance();
+  const kt = await login('kabir');
+  await http(`${CRED_API}/v1/complaints`, { method: 'POST', headers: asMember(kt), body: { category: 'offer', message: 'Why was I offered an EMI after paying part of my bill?' } });
+  await drain();
+  await adminVisit(`${ADMIN}/`, 'admin overview', 'm6-20-admin-overview');
+  await adminVisit(`${ADMIN}/members`, 'admin members', 'm6-21-admin-members');
+  const { members } = await http(`${CRED_API}/admin/v1/members`);
+  await adminVisit(`${ADMIN}/members?id=${members.find((m) => m.personaKey === 'aarav').id}`, 'admin member detail', 'm6-22-admin-member-detail');
+  await adminVisit(`${ADMIN}/transactions`, 'admin transactions', 'm6-23-admin-transactions');
+  await adminVisit(`${ADMIN}/decisions`, 'admin decisions', 'm6-24-admin-decisions');
+  await adminVisit(`${ADMIN}/audit`, 'admin audit', 'm6-25-admin-audit');
+  await adminVisit(`${ADMIN}/partners`, 'admin partners', 'm6-26-admin-partners');
+  await adminVisit(`${ADMIN}/rules`, 'admin rules', 'm6-27-admin-rules');
+  // Edit a rule: an invalid value is refused with the reason, a valid one saved and logged
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await clickText('Edit', 'button');
+  const edit = await page.$$('main input');
+  const clear = async (el) => {
+    await el.click();
+    for (let i = 0; i < 8; i++) await page.keyboard.press('Backspace');
+  };
+  await clear(edit[0]);
+  await edit[0].type('9');
+  await edit[1].type('Testing the range check');
+  await clickText('Save', 'button');
+  await waitText('must be between');
+  await page.screenshot({ path: path.join(OUT, 'm6-28-admin-rule-invalid.png') });
+  await clear(edit[0]);
+  await edit[0].type('3');
+  await clickText('Save', 'button');
+  await waitText('changed');
+  await adminVisit(`${ADMIN}/audit`, 'admin audit after rule', undefined);
+  await adminVisit(`${ADMIN}/demo`, 'control room', 'm6-29-control-room');
+  await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
+  await clickText('Priya', 'label');
+  await clickText('New car, third-party only', 'button');
+  await until(() => page.evaluate(() => document.body.innerText.includes('New car, third-party only (priya):')), 'scenario fired', 20000);
+  await page.screenshot({ path: path.join(OUT, 'm6-31-control-room-fired.png') });
+  await http(`${CRED_API}/admin/v1/rules/reset`, { method: 'POST', body: { reason: 'screenshots' } });
+  log('admin console and control room: every page renders, rule edit validated, scenario fired');
 }
 
 await browser.close();

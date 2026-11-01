@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Bps, Id, IsoDate, IsoDateTime, NonNegativePaise, Ok, PositivePaise, ServiceStatus } from '../common';
 import { endpoint } from '../contract';
 import { EmiInstallment, Vehicle, WaitingPeriod } from '../domain';
-import { ClaimStatus, HoldingKind, LoanKind, LoanStatus, PersonaKey, PolicyKind, Relation, Scenario, WearableProvider } from '../enums';
+import { ClaimStatus, DealerCover, HoldingKind, LoanKind, LoanStatus, PersonaKey, PolicyKind, Relation, Scenario, WearableProvider } from '../enums';
 
 // ── /lender ───────────────────────────────────────────────────────────────────
 
@@ -66,6 +66,31 @@ export const lenderEndpoints = {
     params: z.object({ applicationRef: Id }),
     body: z.object({ otp: z.string().regex(/^\d{6}$/) }),
     response: z.object({ applicationRef: Id, status: LoanStatus }),
+  }),
+  prepaymentQuote: endpoint({
+    method: 'POST',
+    path: '/lender/v1/loans/:loanRef/prepayment-quotes',
+    auth: 'partner',
+    summary: 'What repaying early would cost and save',
+    params: z.object({ loanRef: Id }),
+    body: z.object({ amountPaise: PositivePaise.nullable(), full: z.boolean() }),
+    response: z.object({
+      principalOutstandingPaise: NonNegativePaise,
+      amountPaise: PositivePaise,
+      chargesPaise: NonNegativePaise,
+      chargesNote: z.string(),
+      interestSavedPaise: NonNegativePaise,
+      remaining: z.array(EmiInstallment),
+    }),
+  }),
+  prepay: endpoint({
+    method: 'POST',
+    path: '/lender/v1/loans/:loanRef/prepayments',
+    auth: 'partner',
+    summary: 'Collect an early repayment from the borrower’s bank account; confirmation follows by webhook',
+    params: z.object({ loanRef: Id }),
+    body: z.object({ amountPaise: PositivePaise.nullable(), full: z.boolean(), clientRef: Id }),
+    response: z.object({ prepaymentRef: Id, status: z.literal('received') }),
   }),
   application: endpoint({
     method: 'GET',
@@ -150,6 +175,15 @@ export const insurerEndpoints = {
     params: z.object({ proposalRef: Id }),
     body: z.object({ otp: z.string().regex(/^\d{6}$/) }),
     response: z.object({ policyRefs: z.array(Id), status: z.literal('issued') }),
+  }),
+  wellness: endpoint({
+    method: 'POST',
+    path: '/insurer/v1/policies/:policyRef/wellness',
+    auth: 'partner',
+    summary: 'The policyholder’s activity score (0–100, nothing else), shared with their consent for the wellness reward',
+    params: z.object({ policyRef: Id }),
+    body: z.object({ score: z.number().int().min(0).max(100), weeks: z.number().int().min(1).max(8) }),
+    response: z.object({ discountPct: z.number().min(0).max(100) }),
   }),
   fileClaim: endpoint({
     method: 'POST',
@@ -283,8 +317,17 @@ export const simEndpoints = {
     path: '/sim/v1/scenarios',
     auth: 'demo',
     summary: 'Fire a real-world scenario for a persona',
-    body: z.object({ scenario: Scenario, personaKey: PersonaKey }),
+    /** new_vehicle: what the dealer sold with the car. */
+    body: z.object({ scenario: Scenario, personaKey: PersonaKey, dealerCover: DealerCover.default('comprehensive') }),
     response: z.object({ scenario: Scenario, personaKey: PersonaKey, eventsEmitted: z.number().int().nonnegative(), note: z.string() }),
+  }),
+  approveConsents: endpoint({
+    method: 'POST',
+    path: '/sim/v1/aa/approve',
+    auth: 'demo',
+    summary: 'Approve a persona’s pending AA requests, sharing every account offered (control room only)',
+    body: z.object({ personaKey: PersonaKey }),
+    response: z.object({ approved: z.number().int().nonnegative() }),
   }),
   outbox: endpoint({
     method: 'GET',

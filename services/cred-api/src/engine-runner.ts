@@ -1,7 +1,6 @@
 import {
   assessGap,
   Decision,
-  DEFAULT_RULES,
   evaluateBalanceSwitch,
   evaluateBigSpend,
   evaluateFloater,
@@ -30,14 +29,16 @@ import {
 import { ecosystemApi, PolicyKind, Relation, type EndpointBodyInput, type InsuranceTerms, type LoanKind, type ProtectionGap, type TriggerOrigin } from '@cred/types';
 import type { Holding as HoldingRow } from '@cred/db/cred';
 import { refreshFromAa } from './aa';
+import { raiseAlert } from './alerts';
+import { activeRules } from './rules';
 import type { Ctx } from './context';
 import { toDecision, toHelp, toOffer } from './mappers';
 import { buildSnapshot } from './snapshot';
 
-/** Rule settings in force. M6 makes these editable; until then, the defaults. */
-export const activeRules = () => DEFAULT_RULES;
 
 type Result = { decisionId: string; offerId: string | null; decision: DecisionDraft };
+
+export { activeRules };
 
 /** Indicative, anonymous quotes. A failing lender is skipped. */
 async function fetchQuotes(ctx: Ctx, memberId: string, kinds: LoanKind[], principalPaise: number, tenureMonths: number, incomeVerified: boolean): Promise<QuoteInput[]> {
@@ -321,6 +322,10 @@ export async function runProtectionGap(
   }
   if (r.kind !== 'decision') throw new Error('engine asked for quotes twice');
   const saved = await persistDecision(ctx, memberId, r.decision, input.triggerEventId, input.triggerRef, s.today);
+  if (input.focus === 'motor' && r.decision.reasons[0] === 'needs_data' && input.origin === 'proactive') {
+    // We can't see the car's cover: ask, as information the member can act on (not a permission prompt)
+    await raiseAlert(ctx, memberId, { kind: 'policy', title: 'New car? Check its cover', body: r.decision.explanation, href: '/protect/vehicle', sourceRef: `vehicle-check:${input.triggerRef}` });
+  }
   return { ...saved, gap: { linked: !!consent, checkedOn: s.today, areas, explanation: r.decision.explanation, offerId: saved.offerId } };
 }
 
@@ -377,6 +382,7 @@ export async function persistDecision(ctx: Ctx, memberId: string, d: DecisionDra
         triggerRef,
         quoteRefsJson: JSON.stringify(o.quoteRefs),
         simDate,
+        shownAt: o.status === 'shown' ? new Date() : null,
       },
     });
     offerId = offer.id;

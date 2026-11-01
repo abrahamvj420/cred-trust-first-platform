@@ -78,8 +78,8 @@ export async function refreshFromAa(ctx: Ctx, consentRowId: string): Promise<voi
     const finding = detectSalary(txns, activeRules());
     const member = await db.member.findUniqueOrThrow({ where: { id: memberId }, include: { ladder: true } });
     const tier = CreditTier.parse(member.ladder?.tier ?? 'starter');
-    const before = creditLine(tier, null, false);
-    const after = finding ? creditLine(tier, finding.monthlyNetPaise, false) : null;
+    const before = creditLine(tier, null, false, activeRules());
+    const after = finding ? creditLine(tier, finding.monthlyNetPaise, false, activeRules()) : null;
     if (finding) {
       const data = { monthlyNetPaise: finding.monthlyNetPaise, employer: finding.employer, monthsVerified: finding.monthsVerified, verifiedAt: new Date(), consentId: c.consentId };
       await db.incomeProfile.upsert({ where: { memberId }, update: data, create: { memberId, ...data } });

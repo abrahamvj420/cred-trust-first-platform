@@ -234,17 +234,28 @@ export function evaluateProtectionGap(
 ): EngineResult | { kind: 'needs_quotes'; area: GapArea } {
   const rules = opts.rules ?? DEFAULT_RULES;
   const d = new Decision('protection_gap', opts.origin ?? 'proactive');
-  if (!input.linked) {
+  // A new car: check the cover that was actually bought with it. If we can't see it, ask; never assume.
+  if (input.focus === 'motor' && !input.areas.some((a) => a.area === 'motor')) {
+    return d.stop(
+      'signal',
+      'needs_data',
+      `${input.trigger}: no motor policy known for the vehicle.`,
+      'Looks like you’ve bought a car. Tell us what cover came with it and we’ll check there’s no gap. If it’s fully covered, we’ll say so and suggest nothing.',
+    );
+  }
+  if (input.focus === 'health' && !input.linked) {
     return d.stop(
       'signal',
       'needs_data',
       `${input.trigger}: no policy data linked; can’t read existing cover.`,
-      'We couldn’t check your cover because your policies aren’t linked. You can link them through Account Aggregator in Protect.',
+      d.origin === 'member_initiated'
+        ? 'We couldn’t check your cover because your policies aren’t linked. You can link them through Account Aggregator in Protect.'
+        : 'We didn’t check your cover because your policies aren’t linked.',
     );
   }
   const area = input.areas.find((a) => a.area === input.focus) ?? input.areas.find((a) => !a.covered);
   if (!area || area.covered) {
-    const what = area?.area === 'motor' ? 'your car is fully covered' : `you hold ${lakhs(area?.existingPaise ?? 0)} of health cover against the ${lakhs(rules.healthCoverNeedPaise)} we suggest`;
+    const what = area?.area === 'motor' ? 'your car has cover for damage to it as well as to others' : `you hold ${lakhs(area?.existingPaise ?? 0)} of health cover against the ${lakhs(rules.healthCoverNeedPaise)} we suggest`;
     return d.stop('signal', 'already_covered', `${input.trigger}: covered (${area?.title ?? 'all areas'}).`, `We checked your cover after ${input.trigger.toLowerCase()}: ${what}, so there’s nothing to add.`);
   }
   d.pass('signal', `${input.trigger}: ${area.title} gap of ${formatInr(area.gapPaise)}.`);
@@ -261,13 +272,17 @@ export function evaluateProtectionGap(
   d.pass('net_benefit', `${best.label} costs ${formatInr(net)} a year less than ${other.label.toLowerCase()}.`);
 
   const gap = area.area === 'motor' ? 'cover for damage to your car' : `${lakhs(area.gapPaise)} health cover gap`;
+  const headline =
+    area.area === 'motor'
+      ? `Cover check on your new car: damage to the car itself isn’t covered. ${best.label} closes that for ${formatInr(best.addedPremiumPaise)} a year, ${formatInr(net)} less than ${other.label.toLowerCase()}`
+      : `Close your ${gap} for ${formatInr(best.addedPremiumPaise)} a year: ${best.label.toLowerCase()} costs ${formatInr(net)} a year less than ${other.label.toLowerCase()}`;
   const why =
     `We checked your cover after ${input.trigger.toLowerCase()}. ${area.rationale.join(' ')} The cheapest way to close it is ${best.label.toLowerCase()}, ${formatInr(net)} a year less than ${other.label.toLowerCase()}.` +
     (d.origin === 'proactive' ? (d.awaitingPermission ? ' We’ll only show it if you turn on Smart Savings.' : ' You see it because Smart Savings is on.') : '');
   return d.offer(
     net,
     {
-      headline: `Close your ${gap} for ${formatInr(best.addedPremiumPaise)} a year: ${best.label.toLowerCase()} costs ${formatInr(net)} a year less than ${other.label.toLowerCase()}`,
+      headline,
       subline: `From ${best.policies[0]!.terms.insurerName}. ${area.area === 'health' ? 'Waiting periods apply; see them before you decide.' : 'Your current third-party cover stays as it is.'}`,
       benefitLabel: 'a year less than the other way',
       comparison: {

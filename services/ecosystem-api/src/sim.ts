@@ -1,7 +1,7 @@
 import { catalog, prng } from '@cred/db/seed';
 import { handlers, HttpError, notFound } from '@cred/service-kit';
 import { ecosystemApi, personaByKey, TxnCategory, WORLD_SCENARIOS, type Scenario } from '@cred/types';
-import { notifyFiReady } from './aa';
+import { approveConsent, notifyFiReady } from './aa';
 import { addMonthsYmd, simDate, type Ctx } from './context';
 import { dealerMotorPolicy, progressClaim, renewals } from './insurer';
 import { collectEmis, revalueCollateral } from './lender';
@@ -176,7 +176,7 @@ const SCENARIO_NOTES: Record<Scenario, string> = {
   insurer_renewal: 'The insurer sent renewal notices for policies bought through CRED.',
   wearable_sync: 'The health app sent the last four weekly activity summaries.',
   market_fall: 'Equity fund NAVs fell 15%. The AA flagged new data; lenders re-valued pledged funds.',
-  new_vehicle: 'A new car from Velocity Motors: booking paid on the card, sold with third-party cover only.',
+  new_vehicle: 'A new car from Velocity Motors: booking paid on the card, with the cover the dealer sold.',
   claim_update: 'The insurer moved the latest open claim one step.',
   partial_bill_payment: 'A member action: pay part of the bill in the CRED app.',
   fund_sale: 'A member action: start selling a fund in the CRED app.',
@@ -198,6 +198,18 @@ export function simHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
   });
 
   h.on(ecosystemApi.sim.outbox, async () => ({ pending: await db.webhookOutbox.count({ where: { status: 'pending' } }) }));
+
+  /** The control room acting as the member on SimAA's page: approve pending requests, sharing every account offered. */
+  h.on(ecosystemApi.sim.approveConsents, async ({ body }) => {
+    const person = await db.person.findUnique({ where: { personaKey: body.personaKey } });
+    if (!person) throw notFound('Persona');
+    let approved = 0;
+    for (const c of await db.aaConsentRequest.findMany({ where: { personId: person.id, status: 'PENDING' } })) {
+      await approveConsent(ctx, c.consentHandle);
+      approved += 1;
+    }
+    return { approved };
+  });
 
   h.on(ecosystemApi.sim.scenario, async ({ body }) => {
     if (!(WORLD_SCENARIOS as readonly string[]).includes(body.scenario)) {
@@ -227,7 +239,7 @@ export function simHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         break;
       case 'new_vehicle': {
         const v = catalog.NEW_VEHICLE;
-        await dealerMotorPolicy(ctx, person.id, { registration: v.registration, makeModel: v.makeModel, year: v.year, idvPaise: v.idvPaise });
+        await dealerMotorPolicy(ctx, person.id, { registration: v.registration, makeModel: v.makeModel, year: v.year, idvPaise: v.idvPaise }, body.dealerCover);
         events += await notifyFiReady(ctx, 'INSURANCE_POLICIES', person.id);
         if (card && (await postCharge(ctx, card, v.dealer, 'automobile', v.bookingPaise, new Date()))) events += 1;
         break;

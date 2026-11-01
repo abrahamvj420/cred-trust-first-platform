@@ -128,6 +128,14 @@ export function insurerHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     return { policyRefs: refs, status: 'issued' as const };
   });
 
+  /** The policyholder's app shares an activity score (nothing else) for the wellness reward. */
+  h.on(ecosystemApi.insurer.wellness, async ({ params, body }) => {
+    const p = await db.policy.findUnique({ where: { id: params.policyRef }, include: { product: true } });
+    if (!p) throw notFound('Policy');
+    await db.policy.update({ where: { id: p.id }, data: { wellnessScore: body.score } });
+    return { discountPct: wellnessDiscountPct(p.product.wellnessRewardMaxPct, body.score) };
+  });
+
   h.on(ecosystemApi.insurer.fileClaim, async ({ body }) => {
     const policy = await db.policy.findUnique({ where: { id: body.policyRef } });
     if (!policy) throw notFound('Policy');
@@ -203,9 +211,23 @@ export async function progressClaim(ctx: Ctx, claimId: string): Promise<boolean>
   return true;
 }
 
+/** The insurer's own wellness table: a share of the product's maximum reward by activity score. */
+export function wellnessDiscountPct(maxPct: number, score: number | null): number {
+  if (score === null || !maxPct) return 0;
+  const share = score >= 80 ? 1 : score >= 60 ? 0.5 : score >= 40 ? 0.25 : 0;
+  return Number((maxPct * share).toFixed(2));
+}
+
+const renewalTerms = (p: { annualPremiumPaise: number; wellnessScore: number | null; product: { wellnessRewardMaxPct: number } }) => {
+  const pct = wellnessDiscountPct(p.product.wellnessRewardMaxPct, p.wellnessScore);
+  const discount = Math.round((p.annualPremiumPaise * pct) / 100);
+  return { base: p.annualPremiumPaise, discount, due: p.annualPremiumPaise - discount };
+};
+
 /**
- * Renewal notices for policies an app helps manage (clientRef set), sent once
- * per renewal date, `daysAhead` before it; policies past their date roll over a year.
+ * Renewals for policies an app helps manage (clientRef set): a notice `daysAhead`
+ * before the date (with any wellness discount), then on the date the premium is
+ * collected and the policy renewed for a year.
  */
 export async function renewals(ctx: Ctx, today: string, opts: { personId?: string; force?: boolean; daysAhead?: number } = {}): Promise<number> {
   const { db } = ctx;
@@ -213,8 +235,18 @@ export async function renewals(ctx: Ctx, today: string, opts: { personId?: strin
   let n = 0;
   for (const p of await db.policy.findMany({ where: { clientRef: { not: null }, isEmployer: false, ...(opts.personId ? { personId: opts.personId } : {}) }, include: { product: true } })) {
     if (!p.renewalDate) continue;
+    const t = renewalTerms(p);
     if (p.renewalDate <= today && !opts.force) {
-      await db.policy.update({ where: { id: p.id }, data: { renewalDate: addMonthsYmd(p.renewalDate, 12) } });
+      // Renew: collect the (discounted) premium and roll the date a year
+      const account = await db.bankAccount.findFirst({ where: { personId: p.personId } });
+      const next = addMonthsYmd(p.renewalDate, 12);
+      if (account) {
+        await db.bankAccount.update({ where: { id: account.id }, data: { balancePaise: { decrement: t.due } } });
+        await db.bankTxn.create({ data: { accountId: account.id, kind: 'debit', amountPaise: -t.due, narration: `RENEWAL ${p.product.name.toUpperCase()}`, at: new Date(`${p.renewalDate}T10:00:00+05:30`) } });
+      }
+      await db.policy.update({ where: { id: p.id }, data: { renewalDate: next } });
+      await ctx.outbox.emit('insurer.policy.renewed', { policyRef: p.id, renewedOn: p.renewalDate, premiumPaidPaise: t.due, wellnessDiscountPaise: t.discount, nextRenewalDate: next });
+      n += 1;
       continue;
     }
     if ((opts.force || p.renewalDate <= ahead) && p.renewalNoticeFor !== p.renewalDate) {
@@ -224,7 +256,10 @@ export async function renewals(ctx: Ctx, today: string, opts: { personId?: strin
         policyRef: p.id,
         kind: policyKindOf(p.product.kind, p.isEmployer),
         coverPaise: p.coverPaise,
-        renewalPremiumPaise: p.annualPremiumPaise,
+        renewalPremiumPaise: t.due,
+        basePremiumPaise: t.base,
+        wellnessDiscountPaise: t.discount,
+        wellnessScore: p.wellnessScore,
         renewalDate: p.renewalDate,
       });
       n += 1;
@@ -233,18 +268,19 @@ export async function renewals(ctx: Ctx, today: string, opts: { personId?: strin
   return n;
 }
 
-/** A car bought at a dealer, sold with only the third-party cover the law requires. */
-export async function dealerMotorPolicy(ctx: Ctx, personId: string, vehicle: Vehicle): Promise<string> {
+/** A car bought at a dealer, with the cover the dealer sold: comprehensive, or only the third-party cover the law requires. */
+export async function dealerMotorPolicy(ctx: Ctx, personId: string, vehicle: Vehicle, cover: 'comprehensive' | 'third_party'): Promise<string> {
   const { db } = ctx;
   const existing = await db.policy.findFirst({ where: { personId, vehicleJson: { contains: vehicle.registration } } });
-  if (existing) return existing.id;
+  if (existing) await db.policy.delete({ where: { id: existing.id } });
   const tp = rates('prd_motor_tp')[0]!.paise;
-  const premium = tp + Math.round((tp * GST_BPS_MOTOR) / 10_000);
+  const base = cover === 'comprehensive' ? Math.round((vehicle.idvPaise * rates('prd_motor_comp')[0]!.paise) / 10_000) + tp : tp;
+  const premium = base + Math.round((base * GST_BPS_MOTOR) / 10_000);
   const p = await db.policy.create({
     data: {
       personId,
-      productId: 'prd_motor_tp',
-      coverPaise: 7_50_000_00, // third-party property damage limit
+      productId: cover === 'comprehensive' ? 'prd_motor_comp' : 'prd_motor_tp',
+      coverPaise: cover === 'comprehensive' ? vehicle.idvPaise : 7_50_000_00, // IDV, or the third-party property damage limit
       annualPremiumPaise: premium,
       membersCoveredJson: '[]',
       renewalDate: addMonthsYmd(await simDate(db), 12),

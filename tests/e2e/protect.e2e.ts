@@ -94,18 +94,18 @@ describe('Protection-Gap Engine (6): triggers are an insurer renewal or a new ve
     expect(gap.offerId).toBe(offer.id);
     // The renewal itself is a reminder with the wellness reward
     const alert = (await cred(credApi.products.alerts, { token })).alerts.find((a) => a.kind === 'renewal')!;
-    expect(alert.body).toMatch(/Renewal premium ₹24,800/);
+    expect(alert.body).toMatch(/^Renewal premium ₹\d[\d,]*: ₹24,800 less a wellness reward of ₹[\d,]+ for your activity score of \d+/);
   });
 
-  it('new vehicle → the dealer sold only third-party cover → own-damage cover recommended', async () => {
+  it('new vehicle → a cover check on the car: the dealer sold only third-party, so own-damage cover is recommended', async () => {
     const token = await login('priya');
-    await scenario('new_vehicle', 'priya');
+    await scenario('new_vehicle', 'priya', 'third_party');
     const offer = await eventually(async () => {
       const a = (await cred(credApi.products.offers, { token })).active;
       return a?.feature === 'protection_gap' ? a : null;
     }, 'motor gap offer');
     expect(offer.options.find((o) => o.recommended)!.label).toBe('Standalone own-damage cover');
-    expect(offer.headline).toMatch(/^Close your cover for damage to your car/);
+    expect(offer.headline).toMatch(/^Cover check on your new car: damage to the car itself isn’t covered/);
     const policies = (await cred(credApi.products.policies, { token })).policies;
     expect(policies.find((p) => p.kind === 'motor_third_party')!.vehicle).toMatchObject({ registration: 'MH 02 VX 4471' });
   });

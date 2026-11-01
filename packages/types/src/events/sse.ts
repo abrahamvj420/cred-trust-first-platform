@@ -23,7 +23,7 @@ export const MemberStreamEvent = z.discriminatedUnion('type', [
   ev('upi.updated', z.object({ paymentId: Id, status: z.string() })),
   ev('alert.created', z.object({ alert: MemberAlert })),
   /** Something the member's screens show changed (statement, ladder, income, holdings, cover, wellness, consent). */
-  ev('data.updated', z.object({ area: z.enum(['cards', 'ladder', 'income', 'holdings', 'insurance', 'wellness', 'consent', 'goals']) })),
+  ev('data.updated', z.object({ area: z.enum(['cards', 'ladder', 'income', 'holdings', 'insurance', 'wellness', 'consent', 'goals', 'complaints', 'loans']) })),
   ev('demo.persona_switched', z.object({ personaKey: PersonaKey })),
   ev('heartbeat', z.object({})),
 ]);

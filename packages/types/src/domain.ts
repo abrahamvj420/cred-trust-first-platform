@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { Bps, Id, IsoDate, IsoDateTime, NonNegativePaise, Paise, PositivePaise } from './common';
 import {
   AlertKind,
+  ComplaintCategory,
   AaConsentStatus,
   AaFiType,
   AaPurpose,
@@ -388,6 +389,9 @@ export type EmiInstallment = z.infer<typeof EmiInstallment>;
 
 export const Loan = z.object({
   id: Id,
+  /** Interest saved by repaying early. */
+  interestSavedPaise: NonNegativePaise.default(0),
+  principalOutstandingPaise: NonNegativePaise.default(0),
   offerId: Id.nullable(),
   kind: LoanKind,
   lenderName: z.string(),
@@ -553,9 +557,12 @@ export const InsurancePolicy = z.object({
   employerName: z.string().nullable(),
   membersCovered: z.array(Relation),
   renewalDate: IsoDate.nullable(),
-  /** Read through Account Aggregator, or bought through CRED. */
-  source: z.enum(['aa', 'cred_purchase']),
+  /** Read through Account Aggregator, bought through CRED, or told to CRED by the member (e.g. a car's cover). */
+  source: z.enum(['aa', 'cred_purchase', 'self_declared']),
   vehicle: Vehicle.nullable(),
+  /** Premium saved at renewals by the wellness reward. */
+  wellnessSavedPaise: NonNegativePaise,
+  lastRenewedOn: IsoDate.nullable(),
 });
 export type InsurancePolicy = z.infer<typeof InsurancePolicy>;
 
@@ -643,11 +650,48 @@ export const WellnessStatus = z.object({
   rewardMaxPaise: NonNegativePaise,
   policyName: z.string().nullable(),
   renewalDate: IsoDate.nullable(),
+  /** Saved so far at renewals, applied by the insurer. */
+  rewardSavedPaise: NonNegativePaise,
+  lastRenewal: z.object({ on: IsoDate, premiumPaidPaise: NonNegativePaise, savedPaise: NonNegativePaise }).nullable(),
   /** Exactly what the health app shares with CRED, and what it never shares. */
   shared: z.array(z.string()),
   neverShared: z.array(z.string()),
 });
 export type WellnessStatus = z.infer<typeof WellnessStatus>;
+
+// ── Early repayment ───────────────────────────────────────────────────────────
+
+/** What repaying early costs and saves, from the lender, before the member confirms. */
+export const PrepaymentQuote = z.object({
+  loanId: Id,
+  full: z.boolean(),
+  principalOutstandingPaise: NonNegativePaise,
+  /** Principal repaid now (plus any interest accrued is nil: EMIs are monthly). */
+  amountPaise: PositivePaise,
+  chargesPaise: NonNegativePaise,
+  chargesNote: z.string(),
+  /** Interest the member no longer pays. */
+  interestSavedPaise: NonNegativePaise,
+  totalToPayPaise: PositivePaise,
+  /** After a part payment: the EMI stays the same and the loan ends sooner. */
+  remainingInstalments: z.number().int().nonnegative(),
+  newEndDate: IsoDate.nullable(),
+});
+export type PrepaymentQuote = z.infer<typeof PrepaymentQuote>;
+
+// ── Complaints ────────────────────────────────────────────────────────────────
+
+export const Complaint = z.object({
+  id: Id,
+  category: ComplaintCategory,
+  message: z.string(),
+  offerId: Id.nullable(),
+  status: z.enum(['open', 'resolved']),
+  resolution: z.string().nullable(),
+  createdAt: IsoDateTime,
+  resolvedAt: IsoDateTime.nullable(),
+});
+export type Complaint = z.infer<typeof Complaint>;
 
 // ── Alerts ────────────────────────────────────────────────────────────────────
 

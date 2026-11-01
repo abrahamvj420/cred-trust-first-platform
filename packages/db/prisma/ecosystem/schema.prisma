@@ -359,6 +359,8 @@ model Policy {
   vehicleJson        String?
   /// Renewal date we last sent a renewal notice for
   renewalNoticeFor   String?
+  /// Latest activity score shared by the policyholder's app (wellness reward), 0–100
+  wellnessScore      Int?
 
   person Person           @relation(fields: [personId], references: [id], onDelete: Cascade)
   product InsuranceProduct @relation(fields: [productId], references: [id])

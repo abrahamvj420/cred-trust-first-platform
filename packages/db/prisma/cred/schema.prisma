@@ -49,6 +49,45 @@ model Member {
   audit             AuditLog[]
   rewards           RewardEntry[]
   alerts            MemberAlert[]
+  complaints        Complaint[]
+}
+
+/// A concern the member raised; admin resolves it with a note back to them
+model Complaint {
+  id         String    @id @default(cuid())
+  memberId   String
+  /// offer | data_privacy | claim | payment | loan | other
+  category   String
+  message    String
+  offerId    String?
+  /// open | resolved
+  status     String    @default("open")
+  resolution String?
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+}
+
+/// Every call CRED made to a partner (lender, insurer, AA, bank …), for the admin partner log
+model PartnerCall {
+  id       String   @id @default(cuid())
+  partner  String
+  method   String
+  path     String
+  status   Int
+  ms       Int
+  memberId String?
+  at       DateTime @default(now())
+
+  @@index([at])
+}
+
+/// Rule settings changed from admin; anything absent uses the engine default
+model RuleSetting {
+  key       String   @id
+  value     Int
+  updatedAt DateTime @updatedAt
 }
 
 /// Information for the member (market moves, claim updates, tier changes). Never an offer.
@@ -320,6 +359,9 @@ model InsurancePolicy {
   proposalRef         String?  @unique
   /// active | proposed
   status              String  @default("active")
+  wellnessSavedPaise  Int     @default(0)
+  lastRenewedOn       String?
+  lastPremiumPaidPaise Int?
 
   member Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
   claims Claim[]
@@ -423,6 +465,8 @@ model Offer {
   quoteRefsJson   String    @default("{}")
   simDate         String    @default("")
   createdAt       DateTime  @default(now())
+  /// First time the member saw it (null while awaiting Smart Savings)
+  shownAt         DateTime?
   decidedAt       DateTime?
   decidedSimDate  String?
 
@@ -450,6 +494,8 @@ model Loan {
   processingFeePaise Int
   /// Loan against holdings: what is pledged
   collateralJson    String?
+  /// Interest no longer paid because of early repayments
+  interestSavedPaise Int     @default(0)
   /// applied | approved | declined | disbursed | closed
   status            String
   createdAt         DateTime @default(now())

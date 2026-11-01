@@ -4,6 +4,120 @@ One section per milestone from M4 onward: what was built, decisions taken withou
 
 ---
 
+## M6 · Privacy, admin console and control room
+
+Tag `m6`. Gate at tag:
+- `pnpm typecheck`: 11 packages.
+- `pnpm test`: 179 unit tests (engine 122, including rule-range validation) and the boundary checker.
+- `pnpm test:e2e`: 59 cross-service tests, 13 of them new.
+- `pnpm screenshots m6`: every member screen for all five personas, plus every admin page at desktop width. No serious or critical axe findings.
+
+### M5 follow-ups
+
+1. **New-vehicle cover is now a cover check on the car, not an assumption.**
+   - The `new_vehicle` scenario takes `dealerCover`: `comprehensive` (the default) or `third_party`.
+   - **With policies linked through AA**, CRED reads the car's actual policy. Comprehensive cover means nothing is suggested (decision `already_covered`). Third-party only means the cheapest way to add own-damage cover, with the headline "Cover check on your new car: damage to the car itself isn't covered…".
+   - **Without a link**, CRED doesn't guess. It records `needs_data` and sends an alert, "New car? Check its cover", which opens a short form: car, price, and what cover came with it. A suggestion follows only if there's a real gap. "Not sure" tells the member where to look on the dealer's papers.
+   - **Engine fix along the way:** a car trigger used to fall back to the health gap when no motor policy was known. It now asks instead.
+2. **`insurance_data` is asked for only on the member's move.** It is granted only when the member approves a policy link on SimAA (Protect → Link your policies). I audited every path:
+   - No proactive trigger prompts for it.
+   - The proactive "not linked" explanation no longer nudges the member to link; the member-initiated one still tells them how.
+   - E2e asserts that a car check, a renewal and a member-initiated check never create the permission or a prompt.
+3. **The wellness reward is applied at renewal.**
+   - With `health_data` on, CRED shares one number with the insurer of a floater bought through CRED: the four-week average activity score.
+   - The insurer's `renewal_due` webhook now carries the base premium, the discount and the premium due.
+   - On the renewal date the insurer collects the discounted premium and sends `insurer.policy.renewed`.
+   - CRED shows "Saved ₹X at your renewal" on Wellness, with an alert. Priya's floater renews on 25 Nov, so one advance shows it.
+4. **Early repayment.** Loans → Repay early lets the member repay part or all.
+   - The lender quotes the charges (nil, as every key facts statement says), the interest saved, and the new end date. A part payment keeps the EMI and shortens the loan.
+   - The member pays from their bank. The lender confirms with `lender.loan.prepaid`; CRED updates the schedule and shows the interest saved on the loan.
+   - A repayment the account can't cover is refused by the lender, and nothing changes.
+
+### What was built
+
+- **CRED privacy area** (Profile → Privacy):
+  - **Permissions dashboard:** every permission, including `insurance_data`, plus every active Account Aggregator link, each with one-tap "Turn off" or "Unlink and delete".
+  - **What CRED knows about me:** each section with its source and the permission behind it, plus what CRED never holds.
+  - **Your data and decisions.**
+  - **Download my data** as JSON.
+  - **Delete my data**, with typed confirmation:
+    - it first revokes consents and unlinks the health app at the source;
+    - it then deletes CRED's data and anonymises the member;
+    - it keeps loans and policies held with partners (and their decisions), the audit log and complaints, and the screen lists what was kept and why.
+  - Every action is audited: `privacy.viewed_what_cred_knows`, `privacy.downloaded`, `privacy.deleted`, and the permission actions.
+- **Help and complaints** (Profile): members raise a concern by category. Admin replies, and the member sees the reply.
+- **Admin console**, with sidebar navigation in the admin theme. Every page refreshes live over SSE.
+  - **Overview:**
+    - KPIs: member gains, shown → accepted, decided not to offer, open complaints.
+    - The offer funnel by feature: decisions, offers, awaiting permission, shown, accepted, dismissed, expired, help, available, and not offered by reason.
+    - Member gains by source.
+    - Defaults and strain: overdue EMIs, 90+ days past due, default rate, missed card bills, members getting help.
+    - The latest decisions, with checks next to what the member was told.
+  - **Members** (with a drill-down per member), **Transactions**, and **Decisions** (filter by feature and outcome).
+  - **Complaints**, resolved with a reply.
+  - **Permissions & audit**, and **Partners & webhooks**: every call CRED made out and every signed webhook in.
+  - **Rule settings**, editable live:
+    - values entered in human units (%, ₹, ×);
+    - each rule has a range, and changes are also checked against the rules they depend on (lowest rate ≤ highest; wellness tiers rising; equity loan-to-value ≤ debt);
+    - a reason is required for every change;
+    - every change is logged with from, to and the reason;
+    - one-click reset to defaults (also logged).
+- **Control room** (`/demo`):
+  - service status;
+  - persona picker plus "Show on phone" (the CRED app switches);
+  - a trigger button for every feature, grouped 1–8, using world events on ecosystem-api and member actions on cred-api;
+  - advance a month;
+  - reset demo, which resets both worlds and the rule settings;
+  - a log of what you fired.
+- **EMIs can bounce.** When the account can't cover an EMI, it stays overdue, is retried next month, and the member gets a supportive alert. This is what the admin "defaults" figures count.
+
+### Decisions I made on my own
+
+| Decision | Why |
+|---|---|
+| **Member-side triggers in the control room go through cred-api's own public API**, acting as the member with a session token (`/sim/member-actions`, DEMO_MODE only) | Paying part of a bill or starting a sale happens in the app, not the world. Going through the real endpoints means every rule and log applies. |
+| **The control room can approve a persona's pending AA requests** (`/sim/v1/aa/approve`, DEMO_MODE) | It stands in for the member tapping Approve on SimAA, so "verify salary" and "link portfolio" work from one button. The real page is still what members use. |
+| **Prepayment charges are nil on every loan** | The key facts already promised "Foreclosure charges: Nil". A charge now would contradict them. The plumbing reports charges, so a lender could add them with matching key facts. |
+| **Part prepayment keeps the EMI and shortens the loan** | It saves more interest than lowering the EMI, and it's the common default. The quote shows the new end date. |
+| **Default = an EMI 90+ days past due** | The usual definition of a non-performing loan. Overdue EMIs and missed card bills are shown separately. |
+| **Delete keeps loans and CRED-bought policies, their offers and decisions, the audit log and complaints**; everything else goes. The phone and name are anonymised. | The brief requires partner-held loans and policies to be kept. The audit log is what proves CRED acted with permission. |
+| **Complaints were added** (member channel and admin queue) | The admin brief lists complaints, but there was no way for a member to raise one. |
+| **Partner calls are logged** (`PartnerCall`) | Needed for "partner and webhook log": webhooks cover inbound only. |
+| **An offer is "shown" from `shownAt`** (new column) | Statuses alone can't tell a dismissed Smart Savings prompt from a dismissed offer. |
+| **The M3 e2e assertion `rules.editable === false` became `true`**, plus a range check | It documented the "read-only until M6" plan. M6 makes rules editable, so the old expectation no longer describes the product. This is the only change to an earlier test's expectation. |
+| **The M5 Protect e2e passes `dealerCover: 'third_party'` explicitly, and the renewal alert assertion now expects the insurer's discount** | Both follow directly from follow-ups 1 and 3. The tests still check the same behaviour. |
+| **The insurer's wellness score is seeded for Priya** | She already shares activity. Otherwise her first renewal would race the weekly summaries still in flight. |
+
+### Deviations from plan
+
+- The control room's admin calls go straight from the browser to each service's `/status` and `/sim` (the allowed exception), not through admin's own API.
+- No e2e test makes an EMI bounce. No persona can be pushed short at month end without editing data by hand. The path is code-reviewed and covered by the overview's zero-default assertions.
+
+### Known gaps
+
+- Repayment plans for members who are struggling are still only explained, not created.
+- There's no "documents pending" step in claims, and no top-up of pledged holdings after a collateral alert.
+- Admin has no login (an internal console on localhost for the demo), so rule changes are logged as `admin`.
+- Deleting data doesn't ask partners to delete; they keep what they hold under their own retention rules, as the screen says.
+
+### Screenshots (`docs/screenshots/m6/`)
+
+The M4 and M5 screenshots are regenerated alongside. New in M6:
+
+| | | |
+|---|---|---|
+| `m6-01-privacy` | `m6-02-what-cred-knows` | `m6-03-permissions-aa-links` |
+| `m6-04-delete` | `m6-05-repay-quote` | `m6-06-loan-after-repay` |
+| `m6-07-alert-car-check` | `m6-08-car-cover-form` | `m6-09-car-cover-gap` |
+| `m6-10-wellness-saved` | `m6-11-complaint-raised` | `m6-12-complaint-answered` |
+| `m6-13-deleted-retained` | `m6-20-admin-overview` | `m6-21-admin-members` |
+| `m6-22-admin-member-detail` | `m6-23-admin-transactions` | `m6-24-admin-decisions` |
+| `m6-25-admin-audit` | `m6-26-admin-partners` | `m6-27-admin-rules` |
+| `m6-28-admin-rule-invalid` | `m6-29-control-room` | `m6-30-admin-complaints` |
+| `m6-31-control-room-fired` | | |
+
+---
+
 ## M5 · The simulated clock and features 2–8
 
 Tag `m5`. Gate at tag:

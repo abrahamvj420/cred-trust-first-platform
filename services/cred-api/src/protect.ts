@@ -81,6 +81,41 @@ export function protectHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     return r.gap;
   });
 
+  /** The member tells us what cover came with their car; we check it (nothing suggested if it's comprehensive). */
+  h.on<typeof credApi.products.declareVehicle, Auth>(credApi.products.declareVehicle, async ({ auth, body }) => {
+    const v = body.vehicle;
+    await db.insurancePolicy.deleteMany({ where: { memberId: auth.memberId, source: 'self_declared', vehicleJson: { contains: v.registration } } });
+    if (body.cover !== 'not_sure') {
+      await db.insurancePolicy.create({
+        data: {
+          memberId: auth.memberId,
+          externalRef: `self_${auth.memberId}_${v.registration.replace(/\W/g, '')}`,
+          insurerName: 'Your insurer',
+          productName: body.cover === 'comprehensive' ? 'Comprehensive motor cover' : 'Third-party motor cover',
+          kind: body.cover === 'comprehensive' ? 'motor_comprehensive' : 'motor_third_party',
+          coverPaise: body.cover === 'comprehensive' ? v.idvPaise : 7_50_000_00,
+          annualPremiumPaise: body.annualPremiumPaise ?? 0,
+          membersCoveredJson: '[]',
+          source: 'self_declared',
+          vehicleJson: JSON.stringify(v),
+        },
+      });
+    }
+    await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'vehicle.declared', target: v.registration, details: { cover: body.cover } });
+    dataUpdated(ctx, auth.memberId, 'insurance');
+    if (body.cover === 'not_sure') {
+      const { areas } = await gapAreas(ctx, auth.memberId);
+      return {
+        linked: !!(await insuranceLinked(ctx, auth.memberId)),
+        checkedOn: await ctx.simDate(),
+        areas,
+        explanation: 'No problem. Your dealer’s papers include a policy schedule: if it lists “own damage” the car is fully covered. Come back and tell us when you know; we won’t guess.',
+        offerId: null,
+      };
+    }
+    return (await runProtectionGap(ctx, auth.memberId, { focus: 'motor', trigger: 'You told us about your car', origin: 'member_initiated', triggerRef: `vehicle:${v.registration}`, triggerEventId: null })).gap;
+  });
+
   // ── Claims concierge ──
 
   h.on<typeof credApi.products.claims, Auth>(credApi.products.claims, async ({ auth }) => ({
@@ -119,7 +154,7 @@ export function protectHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     const [link, weeks, floater] = await Promise.all([
       db.wearableLink.findUnique({ where: { memberId } }),
       db.activitySummary.findMany({ where: { memberId }, orderBy: { weekStart: 'desc' }, take: 8 }),
-      db.insurancePolicy.findFirst({ where: { memberId, status: 'active', kind: 'health_family_floater', isEmployer: false }, orderBy: { annualPremiumPaise: 'desc' } }),
+      db.insurancePolicy.findFirst({ where: { memberId, status: 'active', kind: 'health_family_floater', isEmployer: false, source: 'cred_purchase' }, orderBy: { annualPremiumPaise: 'desc' } }),
     ]);
     const summaries = weeks.map((w) => ActivitySummary.parse({ weekStart: w.weekStart, avgDailySteps: w.avgDailySteps, activeDays: w.activeDays, score: w.score }));
     const reward = wellnessReward(floater?.annualPremiumPaise ?? 0, summaries.map((w) => w.score), floater ? 10 : 0, activeRules());
@@ -134,6 +169,8 @@ export function protectHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       rewardMaxPaise: reward.maxPaise,
       policyName: floater?.productName ?? null,
       renewalDate: floater?.renewalDate ?? null,
+      rewardSavedPaise: floater?.wellnessSavedPaise ?? 0,
+      lastRenewal: floater?.lastRenewedOn ? { on: floater.lastRenewedOn, premiumPaidPaise: floater.lastPremiumPaidPaise ?? 0, savedPaise: floater.wellnessSavedPaise } : null,
       shared: SHARED,
       neverShared: NEVER_SHARED,
     };

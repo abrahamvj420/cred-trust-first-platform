@@ -133,6 +133,7 @@ function Protect() {
                 title="Wellness rewards"
                 subtitle={wellness.data?.linked ? `Score ${wellness.data.averageScore ?? '–'} · ` + (wellness.data.rewardEarnedPaise ? `₹${Math.round(wellness.data.rewardEarnedPaise / 100).toLocaleString('en-IN')} off at renewal` : 'keep moving to earn a reward') : 'Earn up to 10% off your floater premium'}
               />
+              <ListRow href="/protect/vehicle" leading={<Avatar icon="car" />} title="Check a car’s cover" subtitle="Tell us what came with it; we’ll say if there’s a gap" />
               <ListRow
                 href="/protect/claims"
                 leading={<Avatar icon="doc" />}

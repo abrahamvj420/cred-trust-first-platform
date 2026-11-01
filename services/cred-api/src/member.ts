@@ -100,7 +100,7 @@ export function memberHandlers(ctx: Ctx, h: H) {
     const open = forTxn.find((o) => ACTIVE_OFFER_STATUSES.includes(o.status));
     if (open) {
       // Already have options for this purchase: show them (no permission needed now the member asked).
-      const shown = open.status === 'awaiting_permission' ? await db.offer.update({ where: { id: open.id }, data: { status: 'shown', origin: 'member_initiated' } }) : open;
+      const shown = open.status === 'awaiting_permission' ? await db.offer.update({ where: { id: open.id }, data: { status: 'shown', origin: 'member_initiated', shownAt: new Date() } }) : open;
       const decision = await db.engineDecision.findUniqueOrThrow({ where: { id: shown.decisionId }, include: { offer: { select: { id: true } } } });
       return { decision: memberDecision(toDecision(decision)), offer: toOffer(shown) };
     }
@@ -275,7 +275,7 @@ export function memberHandlers(ctx: Ctx, h: H) {
     if (body.scope === 'smart_savings') {
       // The offer that prompted the permission is now shown.
       for (const o of await db.offer.findMany({ where: { memberId: auth.memberId, status: 'awaiting_permission' } })) {
-        const shown = await db.offer.update({ where: { id: o.id }, data: { status: 'shown' } });
+        const shown = await db.offer.update({ where: { id: o.id }, data: { status: 'shown', shownAt: new Date() } });
         await ctx.audit({ memberId: auth.memberId, actor: 'system', action: 'offer.shown', target: o.id });
         hub.member(auth.memberId, { type: 'offer.created', data: { offer: toOffer(shown) } });
         hub.admin({ type: 'offer.updated', data: { memberId: auth.memberId, offer: toOffer(shown) } });

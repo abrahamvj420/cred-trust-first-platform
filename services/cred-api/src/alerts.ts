@@ -16,5 +16,5 @@ export async function raiseAlert(ctx: Ctx, memberId: string, a: { kind: AlertKin
   }
 }
 
-export const dataUpdated = (ctx: Ctx, memberId: string, area: 'cards' | 'ladder' | 'income' | 'holdings' | 'insurance' | 'wellness' | 'consent' | 'goals') =>
+export const dataUpdated = (ctx: Ctx, memberId: string, area: 'cards' | 'ladder' | 'income' | 'holdings' | 'insurance' | 'wellness' | 'consent' | 'goals' | 'complaints' | 'loans') =>
   ctx.hub.member(memberId, { type: 'data.updated', data: { area } });

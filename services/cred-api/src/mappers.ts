@@ -1,8 +1,9 @@
 import { annualFeePaise, goalPlan } from '@cred/engine';
-import type { AaConsent as ConsentRow, Claim as ClaimRow, Goal as GoalRow, Holding as HoldingRow, InsurancePolicy as PolicyRow, MemberAlert as AlertRow, AuditLog, CardTransaction as TxnRow, EngineDecision as DecisionRow, HelpPlan as HelpRow, Loan as LoanRow, EmiInstallment as InstRow, Offer as OfferRow, Permission as PermRow, Card as CardRow, Statement as StatementRow, BillPayment as PayRow, UpiTransaction as UpiRow, RewardEntry as RewardRow } from '@cred/db/cred';
+import type { Complaint as ComplaintRow, AaConsent as ConsentRow, Claim as ClaimRow, Goal as GoalRow, Holding as HoldingRow, InsurancePolicy as PolicyRow, MemberAlert as AlertRow, AuditLog, CardTransaction as TxnRow, EngineDecision as DecisionRow, HelpPlan as HelpRow, Loan as LoanRow, EmiInstallment as InstRow, Offer as OfferRow, Permission as PermRow, Card as CardRow, Statement as StatementRow, BillPayment as PayRow, UpiTransaction as UpiRow, RewardEntry as RewardRow } from '@cred/db/cred';
 import {
   AaConsent,
   Claim,
+  Complaint,
   Goal,
   Holding,
   InsurancePolicy,
@@ -133,6 +134,8 @@ export const toLoan = (l: LoanRow & { installments: InstRow[] }): Loan =>
     emiPaise: l.emiPaise,
     status: l.status,
     createdAt: iso(l.createdAt),
+    interestSavedPaise: l.interestSavedPaise,
+    principalOutstandingPaise: l.status === 'disbursed' ? l.installments.filter((i) => i.status !== 'paid').reduce((a, i) => a + i.principalPaise, 0) : 0,
     schedule: [...l.installments]
       .sort((a, b) => a.n - b.n)
       .map((i) => ({ n: i.n, dueDate: i.dueDate, amountPaise: i.amountPaise, principalPaise: i.principalPaise, interestPaise: i.interestPaise, status: i.status })),
@@ -171,6 +174,8 @@ export const toPolicy = (p: PolicyRow): InsurancePolicy =>
     renewalDate: p.renewalDate,
     source: p.source,
     vehicle: json(p.vehicleJson),
+    wellnessSavedPaise: p.wellnessSavedPaise,
+    lastRenewedOn: p.lastRenewedOn,
   });
 
 const NEXT_STEP: Record<string, string> = {
@@ -219,3 +224,6 @@ export const toGoal = (g: GoalRow, today: string, feeRateBps: number): Goal => {
     onTrack: plan.onTrack,
   });
 };
+
+export const toComplaint = (c: ComplaintRow): Complaint =>
+  Complaint.parse({ id: c.id, category: c.category, message: c.message, offerId: c.offerId, status: c.status, resolution: c.resolution, createdAt: iso(c.createdAt), resolvedAt: c.resolvedAt && iso(c.resolvedAt) });

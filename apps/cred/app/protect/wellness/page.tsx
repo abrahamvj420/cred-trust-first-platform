@@ -89,6 +89,14 @@ export default function Wellness() {
               <p className="text-callout text-muted">Rewards apply to a family floater bought through CRED.</p>
             )}
           </Card>
+          {w.lastRenewal ? (
+            <Card className="flex items-baseline justify-between gap-3">
+              <span className="text-callout text-muted">
+                Saved at your renewal on {longDate(w.lastRenewal.on)}
+              </span>
+              <Money paise={w.lastRenewal.savedPaise} size="headline" className="text-positive" />
+            </Card>
+          ) : null}
           <SectionHeader title="Weekly summaries" />
           <List>
             {w.weeks.map((x) => (

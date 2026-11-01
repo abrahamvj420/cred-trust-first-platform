@@ -1,6 +1,6 @@
 import type { CredDb } from '@cred/db/cred';
 import { requireEnv, type Logger } from '@cred/service-kit';
-import { call, type CallInput, type Endpoint, type EndpointResponse, type AuditEntry } from '@cred/types';
+import { ApiError, call, type CallInput, type Endpoint, type EndpointResponse, type AuditEntry } from '@cred/types';
 import type { Hub } from './hub';
 import { toAudit } from './mappers';
 
@@ -21,8 +21,21 @@ export function createCtx(db: CredDb, hub: Hub, log: Logger): Ctx {
     db,
     hub,
     log,
-    partner: (endpoint, input = {}) =>
-      call(requireEnv('ECOSYSTEM_API_URL'), endpoint, { ...input, headers: { ...input.headers, 'x-partner-key': requireEnv('PARTNER_API_KEY_CRED') } }),
+    async partner(endpoint, input = {}) {
+      // Every partner call is logged for the admin partner log
+      const started = Date.now();
+      let status = 200;
+      try {
+        return await call(requireEnv('ECOSYSTEM_API_URL'), endpoint, { ...input, headers: { ...input.headers, 'x-partner-key': requireEnv('PARTNER_API_KEY_CRED') } });
+      } catch (e) {
+        status = e instanceof ApiError ? e.status : 503;
+        throw e;
+      } finally {
+        void db.partnerCall
+          .create({ data: { partner: endpoint.path.split('/')[1] ?? 'unknown', method: endpoint.method, path: endpoint.path, status, ms: Date.now() - started } })
+          .catch(() => undefined);
+      }
+    },
     async audit({ memberId, actor, action, target = null, details = {} }) {
       const row = await db.auditLog.create({ data: { memberId, actor, action, target, detailsJson: JSON.stringify(details) } });
       hub.admin({ type: 'audit.logged', data: { entry: toAudit(row) } });

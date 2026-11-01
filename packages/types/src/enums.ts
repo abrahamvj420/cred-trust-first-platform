@@ -155,6 +155,17 @@ export const Scenario = z.enum([
 export type Scenario = z.infer<typeof Scenario>;
 
 /** Things that happen in the outside world, fired by ecosystem-api. The rest are member actions in the CRED app. */
+/** Things members do in the CRED app; the control room can do them on a persona's behalf (DEMO_MODE only). */
+export const MemberAction = z.enum(['partial_bill_payment', 'fund_sale', 'verify_salary', 'link_portfolio', 'link_policies', 'add_parents', 'connect_wearable']);
+export type MemberAction = z.infer<typeof MemberAction>;
+
+/** What a dealer sold with a new car in the new_vehicle scenario. */
+export const DealerCover = z.enum(['comprehensive', 'third_party']);
+export type DealerCover = z.infer<typeof DealerCover>;
+
+export const ComplaintCategory = z.enum(['offer', 'data_privacy', 'claim', 'payment', 'loan', 'other']);
+export type ComplaintCategory = z.infer<typeof ComplaintCategory>;
+
 export const WORLD_SCENARIOS = ['big_purchase', 'insurer_renewal', 'wearable_sync', 'market_fall', 'new_vehicle', 'claim_update'] as const satisfies readonly Scenario[];
 
 export const AlertKind = z.enum(['market_fall', 'collateral', 'renewal', 'claim', 'ladder', 'income', 'loan', 'policy']);

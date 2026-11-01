@@ -140,8 +140,8 @@ export async function advance(months = 1) {
   return r;
 }
 
-export const scenario = async (s: Scenario, personaKey: PersonaKey) => {
-  const r = await eco(ecosystemApi.sim.scenario, { body: { scenario: s, personaKey } });
+export const scenario = async (s: Scenario, personaKey: PersonaKey, dealerCover: 'comprehensive' | 'third_party' = 'comprehensive') => {
+  const r = await eco(ecosystemApi.sim.scenario, { body: { scenario: s, personaKey, dealerCover } });
   await settle();
   return r;
 };

@@ -52,7 +52,7 @@ tests/e2e/                    `pnpm test:e2e`: starts its own cred-api + ecosyst
 - ecosystem-api owns the simulated clock; cred-api mirrors it from `sim.clock.advanced`.
 - Seed: `pnpm seed` runs `prisma db push` then wipes and refills rows. Deterministic IDs (`mem_aarav`, `per_aarav`, …). Never pass `--accept-data-loss` from an agent; Prisma blocks it and the user must decide.
 - Engine check order (every evaluated check is saved on the decision, offer or not): signal → permission → stress → offer cap → affordability → likely to carry → net benefit. Engine is pure: cred-api builds a `MemberSnapshot`, calls the feature, fetches partner quotes only if asked, calls again. Affordability is re-checked against the actual quotes.
-- **Rule settings** live in `packages/engine/src/rules.ts` (`RULE_DEFINITIONS`): every threshold, cap and rate. Engine functions take `rules` (default `DEFAULT_RULES`); `constants.ts` derives the savings-method numbers from them. Admin reads them at `/rules`; editing arrives in M6.
+- **Rule settings** live in `packages/engine/src/rules.ts` (`RULE_DEFINITIONS`): every threshold, cap and rate. Engine functions take `rules` (default `DEFAULT_RULES`); `constants.ts` derives the savings-method numbers from them. Admin edits them live at `/rules` (M6: validated ranges, every change logged).
 - **Likely to carry**: projected next bill (outstanding minus the open bill due first) vs capacity = typical repayment (last 6 settled) × `carryRepaymentMultipleBps`, or typical repayment + monthly surplus if salary is shared, whichever is higher. Not likely → no proactive offer, logged `can_pay_in_full`; the member can still tap "Convert to EMI" (member-initiated).
 - **Conditional wording**: offer headlines and the Smart Savings card say "If you can’t clear ₹X by the due date, an EMI saves you ₹Y compared with carrying it". Never an unconditional saving claim. "Pay the full bill: ₹0" is always the first option.
 - **Member-initiated** (Convert to EMI): no Smart Savings needed, no monthly cap or cooldown, skips likely-to-carry; stress, one-active-offer, affordability and net benefit still apply.
@@ -208,6 +208,38 @@ Every screen: loading, empty and error states; AA contrast; 44px tap targets; la
 - **Member decision feed** hides everyday purchases that were never candidates (Big-Spend `no_signal`); admin shows everything.
 - **Lender quotes** carry one anonymous attribute: `incomeVerified` (priced 1% lower). Loans against holdings go to Keystone Capital (secured); the lender checks its own loan-to-value limits (CRED's rules are stricter) and marks a lien.
 - **HTTP:** services close each connection after responding (service-kit `onSend` hook). On Node 26, a keep-alive socket that answered while the process had outgoing fetches in flight parks the next request until the 30 s connection sweep.
+
+## Conventions added in M6
+
+- **Car cover check:** never assume what a dealer sold. With policies linked via AA, CRED reads the car's actual policy; otherwise it asks the member (alert → "Check your car's cover" form, `POST /v1/insurance/vehicles`). A suggestion is made only for a real gap (third-party only); comprehensive → nothing. The `new_vehicle` scenario takes `dealerCover` (`comprehensive` default, or `third_party`).
+- **`insurance_data`** is granted only when the member approves a policy link on SimAA (from Protect → Link your policies, or a member-initiated cover check). Proactive checks without linked policies say so without nudging to link; there is never a permission prompt for it.
+- **Wellness at renewal:** with `health_data` on, CRED shares one number (the 4-week average activity score) with the insurer of a floater bought through CRED. The insurer's `renewal_due` carries base premium, discount and premium due; on the date it collects the discounted premium and sends `insurer.policy.renewed`; CRED shows the saving.
+- **Early repayment:** lender quotes (`prepayment-quotes`) charges (nil on all current loans, as their key facts say) and interest saved; part payments keep the EMI and shorten the loan; `lender.loan.prepaid` confirms. EMIs the account can't cover bounce (`lender.emi.bounced`), stay overdue and are retried; 90+ days past due counts as a default in admin.
+- **Rule settings are live:** `RULE_DEFINITIONS` carry `min`/`max`; `validateRuleChange` also enforces cross-rule consistency. Overrides live in `RuleSetting` (cred.db), cached in cred-api (`activeRules()`), reloaded on change and reset. Every change needs a reason and is audited (`rule.changed`, `rule.reset_all`).
+- **Privacy:** delete stops flows at source (AA revoke, health app unlink), deletes CRED's data, anonymises the member and keeps only loans and CRED-bought policies (held with partners), their offers/decisions, the audit log and complaints; the screen lists what is kept and why.
+- **Admin funnel:** an offer is *shown* when `shownAt` is set (on creation if shown, or when Smart Savings is granted); dismissed = declined; blocked grouped by first reason. Member gains = accepted offers' measured saving + interest saved by early repayment + wellness discounts.
+- **Control room:** world events go to ecosystem-api `/sim/v1/scenarios`; member actions go to cred-api `/sim/member-actions`, which acts through cred-api's own public API with that member's session (so every rule applies). AA approvals for those actions use `/sim/v1/aa/approve`. All refuse without `DEMO_MODE=true`.
+- **Partner log:** every `ctx.partner` call is recorded (`PartnerCall`), shown in admin with the inbound webhook log.
+
+## M6 brief (as given)
+
+Start M6. Same rules: tests and boundary checker green or STOP and report; commit, tag "m6", push; add an M6 section to REVIEW.md with decisions, deviations, gaps and screenshots in docs/screenshots/m6/; keep CLAUDE.md updated.
+
+First, M5 follow-ups:
+1. New-vehicle cover: don't assume the dealer sold only third-party. Frame it as a cover check on the new car: read what was actually bought (via the insurer link or member input) and recommend only if there is a real gap. Update REVIEW.md.
+2. Confirm the insurance_data permission is asked only when the member starts a cover check or links a policy, never as a cold prompt. Fix if not.
+3. Apply the wellness reward at renewal: the insurer's renewal webhook carries the discounted premium, and CRED shows the saving earned.
+4. Loan prepayment: members can repay part or all of any loan early from the Loans screen, with the charges (if any) and interest saved shown before confirming; the lender confirms by webhook.
+
+Then:
+
+CRED privacy area: permissions dashboard (one-tap withdraw per permission, including insurance_data and Account Aggregator links), "What CRED knows about me", "Your data and decisions", download my data (JSON), delete my data (with confirmation; loans and policies held by partners are retained as required, and the screen says so). Every action logged.
+
+Admin console: overview; offer funnel by feature (shown, accepted, dismissed, blocked by reason); member gains; defaults; complaints; members and transactions; permission and audit log; partner and webhook log; rule settings editable live (validated, every change logged).
+
+Control room (/demo): service status, persona switcher, scenario buttons for every feature trigger, advance time by a month, reset demo.
+
+Admin and control room look clean and credible, consistent with the admin theme. Stop after M6.
 
 ## M5 brief (as given)
 

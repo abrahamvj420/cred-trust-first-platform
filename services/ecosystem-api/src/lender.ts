@@ -237,7 +237,14 @@ export async function collectEmis(ctx: Ctx, to: string): Promise<number> {
     const account = await db.bankAccount.findFirst({ where: { personId: app.personId } });
     let { paidCount, onTimeCount, ratePaBps } = loan;
     for (const inst of sched.filter((i) => i.status !== 'paid' && i.dueDate <= to)) {
-      const onTime = !!account && account.balancePaise >= inst.amountPaise;
+      // Not enough in the account: the EMI bounces and is retried next month
+      if (!account || account.balancePaise < inst.amountPaise) {
+        inst.status = 'overdue';
+        await ctx.outbox.emit('lender.emi.bounced', { loanRef: loan.id, clientRef: app.clientRef, n: inst.n, amountPaise: inst.amountPaise });
+        events += 1;
+        break;
+      }
+      const onTime = inst.dueDate >= addMonthsYmd(to, -1);
       if (account) {
         await db.bankAccount.update({ where: { id: account.id }, data: { balancePaise: { decrement: inst.amountPaise } } });
         account.balancePaise -= inst.amountPaise;
@@ -262,7 +269,7 @@ export async function collectEmis(ctx: Ctx, to: string): Promise<number> {
         events += 1;
       }
     }
-    if (paidCount !== loan.paidCount) {
+    if (paidCount !== loan.paidCount || sched.some((i) => i.status === 'overdue')) {
       await db.loanAccount.update({ where: { id: loan.id }, data: { scheduleJson: JSON.stringify(sched), paidCount, onTimeCount, ratePaBps } });
       if (sched.every((i) => i.status === 'paid')) {
         await db.loanApplication.update({ where: { id: app.id }, data: { status: 'closed' } });
@@ -271,6 +278,81 @@ export async function collectEmis(ctx: Ctx, to: string): Promise<number> {
     }
   }
   return events;
+}
+
+/** Remaining instalments, principal and interest of a loan account. */
+function remainingOf(scheduleJson: string) {
+  const sched = JSON.parse(scheduleJson) as EmiInstallment[];
+  const left = sched.filter((i) => i.status !== 'paid');
+  return { sched, left, principal: left.reduce((a, i) => a + i.principalPaise, 0), interest: left.reduce((a, i) => a + i.interestPaise, 0) };
+}
+
+/** Months needed to repay `principal` at `rate` with an EMI of `emi` (the EMI stays; the loan ends sooner). */
+function monthsFor(principal: number, ratePaBps: number, emi: number): number {
+  const r = ratePaBps / 10_000 / 12;
+  if (r === 0) return Math.ceil(principal / emi);
+  return Math.max(1, Math.ceil(-Math.log(1 - (principal * r) / emi) / Math.log(1 + r)));
+}
+
+/** No charges for early repayment on any of these loans, as their key facts say. */
+const PREPAY_NOTE = 'No charges for repaying early, as in your key facts.';
+
+function prepayPlan(account: { scheduleJson: string; ratePaBps: number }, full: boolean, amount: number | null) {
+  const { sched, left, principal, interest } = remainingOf(account.scheduleJson);
+  if (!left.length) throw new HttpError(409, 'loan_closed', 'This loan is already repaid');
+  const pay = full ? principal : Math.min(amount ?? 0, principal);
+  if (pay <= 0) throw new HttpError(422, 'invalid_amount', 'Enter an amount to repay');
+  if (!full && pay >= principal) return prepayPlan(account, true, null);
+  if (full || pay === principal) return { sched, pay: principal, remaining: [] as EmiInstallment[], interestSaved: interest, full: true };
+  const rest = principal - pay;
+  const emi = left[0]!.amountPaise;
+  const n = Math.min(left.length, monthsFor(rest, account.ratePaBps, emi));
+  const remaining = schedule(rest, account.ratePaBps, n, left[0]!.dueDate, left[0]!.n);
+  return { sched, pay, remaining, interestSaved: Math.max(0, interest - remaining.reduce((a, i) => a + i.interestPaise, 0)), full: false };
+}
+
+export function prepayHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
+  const { db } = ctx;
+  const accountFor = async (loanRef: string) => {
+    const a = await db.loanAccount.findUnique({ where: { id: loanRef }, include: { application: true } });
+    if (!a || !a.application.personId) throw notFound('Loan');
+    return a;
+  };
+
+  h.on(ecosystemApi.lender.prepaymentQuote, async ({ params, body }) => {
+    const a = await accountFor(params.loanRef);
+    const plan = prepayPlan(a, body.full, body.amountPaise);
+    return { principalOutstandingPaise: remainingOf(a.scheduleJson).principal, amountPaise: plan.pay, chargesPaise: 0, chargesNote: PREPAY_NOTE, interestSavedPaise: plan.interestSaved, remaining: plan.remaining };
+  });
+
+  h.on(ecosystemApi.lender.prepay, async ({ params, body }) => {
+    const a = await accountFor(params.loanRef);
+    const plan = prepayPlan(a, body.full, body.amountPaise);
+    const account = await db.bankAccount.findFirst({ where: { personId: a.application.personId! } });
+    if (!account || account.balancePaise < plan.pay) throw new HttpError(422, 'insufficient_funds', 'Your Mock Bank account doesn’t have enough balance for this repayment.');
+    const now = await simNow(db);
+    const lender = await db.lender.findUniqueOrThrow({ where: { id: a.application.lenderId } });
+    await db.bankAccount.update({ where: { id: account.id }, data: { balancePaise: { decrement: plan.pay } } });
+    await db.bankTxn.create({ data: { accountId: account.id, kind: 'debit', amountPaise: -plan.pay, narration: `PREPAYMENT ${lender.name.toUpperCase()}`, at: now } });
+    const paid = plan.sched.filter((i) => i.status === 'paid');
+    await db.loanAccount.update({ where: { id: a.id }, data: { scheduleJson: JSON.stringify([...paid, ...plan.remaining]) } });
+    if (plan.full) {
+      await db.loanApplication.update({ where: { id: a.applicationId }, data: { status: 'closed' } });
+      await db.lien.updateMany({ where: { lenderApplicationRef: a.applicationId }, data: { status: 'released' } });
+    }
+    const prepaymentRef = `ppy_${crypto.randomUUID()}`;
+    await ctx.outbox.emit('lender.loan.prepaid', {
+      loanRef: a.id,
+      clientRef: a.application.clientRef,
+      prepaymentRef,
+      amountPaise: plan.pay,
+      chargesPaise: 0,
+      interestSavedPaise: plan.interestSaved,
+      closed: plan.full,
+      remaining: plan.remaining,
+    });
+    return { prepaymentRef, status: 'received' as const };
+  });
 }
 
 /** After a market move: re-value pledged funds and tell the borrower's app how the loan now compares. */

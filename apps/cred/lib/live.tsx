@@ -1,6 +1,6 @@
 'use client';
 
-import { MemberStreamEvent, type CallInput, type Endpoint, type EndpointResponse } from '@cred/types';
+import { call, credApi, MemberStreamEvent, type CallInput, type Endpoint, type EndpointResponse } from '@cred/types';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, CRED_API, errorText, session } from './api';
 
@@ -25,6 +25,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     es.onmessage = (m) => {
       const parsed = MemberStreamEvent.safeParse(JSON.parse(m.data));
       if (!parsed.success || parsed.data.type === 'heartbeat') return;
+      // Control room: switch the phone to another persona
+      if (parsed.data.type === 'demo.persona_switched') {
+        void call(CRED_API, credApi.member.demoLogin, { body: { personaKey: parsed.data.data.personaKey } }).then((r) => {
+          session.set(r.token);
+          window.location.href = '/';
+        });
+        return;
+      }
       setLast(parsed.data);
       setVersion((v) => v + 1);
       for (const fn of subs.current) fn(parsed.data);

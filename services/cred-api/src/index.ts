@@ -5,6 +5,9 @@ import { credApi, DEMO_PERSONAS, PersonaKey, WEBHOOK_HEADERS, type Member } from
 import { verifyWebhook } from '@cred/types/signing';
 import { adminHandlers } from './admin';
 import { creditHandlers } from './credit';
+import { loanHandlers } from './loans';
+import { privacyHandlers } from './privacy';
+import { simHandlers } from './sim';
 import { protectHandlers } from './protect';
 import { wealthHandlers } from './wealth';
 import { createCtx } from './context';
@@ -13,6 +16,7 @@ import { memberHandlers } from './member';
 import { moneyHandlers } from './money';
 import { bearer, issueToken, verifyToken } from './session';
 import { ingestWebhook } from './webhooks';
+import { loadRules } from './rules';
 
 loadRootEnv();
 const db = createCredDb();
@@ -55,6 +59,7 @@ const svc = createService({
 });
 
 const ctx = createCtx(db, hub, svc.app.log);
+await loadRules(db);
 
 const h = handlers()
   .on(credApi.platform.status, () => svc.status())
@@ -76,6 +81,7 @@ const h = handlers()
   })
   .on(credApi.platform.simReset, async () => {
     await resetCred(db);
+    await loadRules(db);
     return { ok: true as const };
   });
 
@@ -85,6 +91,9 @@ adminHandlers(ctx, h);
 creditHandlers(ctx, h);
 wealthHandlers(ctx, h);
 protectHandlers(ctx, h);
+loanHandlers(ctx, h);
+privacyHandlers(ctx, h);
+simHandlers(ctx, h);
 
 svc.implement(credApi, h.map);
 

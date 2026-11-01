@@ -39,11 +39,12 @@ export default function Profile() {
           </Card>
           <List>
             <ListRow href="/profile/data" leading={<Avatar icon="list" />} title="Your data and decisions" subtitle="Every suggestion we considered, and why" />
-            <ListRow href="/permissions" leading={<Avatar icon="shield" />} title="Permissions" subtitle="What you’ve allowed. Turn off in one tap" />
+            <ListRow href="/profile/privacy" leading={<Avatar icon="lock" />} title="Privacy" subtitle="Permissions, what we know, download or delete" />
             <ListRow href="/loans" leading={<Avatar icon="loan" />} title="Your loans" subtitle="EMIs and schedules" />
             <ListRow href="/credit" leading={<Avatar icon="trend" />} title="Your credit" subtitle="Credit ladder and verified salary" />
             <ListRow href="/protect" leading={<Avatar icon="shield" />} title="Protect" subtitle="Cover, family, wellness and claims" />
             <ListRow href="/wealth" leading={<Avatar icon="chart" />} title="Your money" subtitle="Investments and goals" />
+            <ListRow href="/help" leading={<Avatar icon="info" />} title="Help and complaints" subtitle="Tell us if something isn’t right" />
           </List>
           <Button
             variant="secondary"

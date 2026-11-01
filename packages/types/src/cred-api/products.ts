@@ -4,6 +4,9 @@ import { endpoint } from '../contract';
 import {
   AcceptOption,
   Claim,
+  Complaint,
+  PrepaymentQuote,
+  Vehicle,
   FamilyMember,
   FloaterComparison,
   Goal,
@@ -19,7 +22,7 @@ import {
   SellVsBorrow,
   WellnessStatus,
 } from '../domain';
-import { DecisionOutcome, FeatureKey, Relation, TriggerOrigin, WearableProvider } from '../enums';
+import { ComplaintCategory, DecisionOutcome, FeatureKey, Relation, TriggerOrigin, WearableProvider } from '../enums';
 
 const OfferParams = z.object({ offerId: Id });
 
@@ -162,6 +165,25 @@ export const productEndpoints = {
     summary: 'Loan with full EMI schedule',
     params: z.object({ loanId: Id }),
     response: z.object({ loan: Loan }),
+  }),
+
+  prepaymentQuote: endpoint({
+    method: 'GET',
+    path: '/v1/loans/:loanId/prepayment',
+    auth: 'member',
+    summary: 'What repaying early costs and saves (from the lender), before confirming',
+    params: z.object({ loanId: Id }),
+    query: z.object({ amountPaise: z.coerce.number().int().positive().optional(), full: z.enum(['true', 'false']).optional() }),
+    response: PrepaymentQuote,
+  }),
+  prepay: endpoint({
+    method: 'POST',
+    path: '/v1/loans/:loanId/prepayments',
+    auth: 'member',
+    summary: 'Repay part or all of a loan early, from the member’s bank account; the lender confirms by webhook',
+    params: z.object({ loanId: Id }),
+    body: z.object({ amountPaise: PositivePaise.optional(), full: z.boolean().default(false) }).refine((b) => b.full || b.amountPaise !== undefined, { message: 'amountPaise or full' }),
+    response: z.object({ quote: PrepaymentQuote, status: z.literal('requested') }),
   }),
 
   // ── Wealth (features 2, 7) ──
@@ -343,6 +365,36 @@ export const productEndpoints = {
     summary: 'Link a health app (requires health_data permission); only weekly summaries are shared',
     body: z.object({ provider: WearableProvider }),
     response: WellnessStatus,
+  }),
+
+  declareVehicle: endpoint({
+    method: 'POST',
+    path: '/v1/insurance/vehicles',
+    auth: 'member',
+    summary: 'Member tells CRED what cover came with their car; CRED checks it (member-initiated)',
+    body: z.object({
+      vehicle: Vehicle,
+      cover: z.enum(['comprehensive', 'third_party', 'not_sure']),
+      annualPremiumPaise: PositivePaise.optional(),
+    }),
+    response: ProtectionGap,
+  }),
+
+  // ── Complaints ──
+  complaints: endpoint({
+    method: 'GET',
+    path: '/v1/complaints',
+    auth: 'member',
+    summary: 'Concerns the member raised and their outcome',
+    response: z.object({ complaints: z.array(Complaint) }),
+  }),
+  fileComplaint: endpoint({
+    method: 'POST',
+    path: '/v1/complaints',
+    auth: 'member',
+    summary: 'Raise a concern (about an offer, data, a claim, a payment …)',
+    body: z.object({ category: ComplaintCategory, message: z.string().trim().min(5).max(600), offerId: Id.optional() }),
+    response: z.object({ complaint: Complaint }),
   }),
 
   // ── Alerts (information, never offers) ──
