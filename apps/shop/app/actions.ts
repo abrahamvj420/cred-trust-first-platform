@@ -10,8 +10,9 @@ import { CART_COOKIE, currentShopper, gateway, orderCookie, parseLines, readCart
 const back = (form: FormData) => z.string().startsWith('/').catch('/').parse(form.get('back'));
 
 export async function chooseShopper(form: FormData) {
-  const key = PersonaKey.parse(form.get('persona'));
-  (await cookies()).set(SHOPPER_COOKIE, key, { path: '/', sameSite: 'lax' });
+  // Submitting with no shopper chosen (the placeholder) just goes back; it must never crash the page
+  const key = PersonaKey.safeParse(form.get('persona'));
+  if (key.success) (await cookies()).set(SHOPPER_COOKIE, key.data, { path: '/', sameSite: 'lax' });
   redirect(back(form));
 }
 

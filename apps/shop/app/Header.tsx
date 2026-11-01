@@ -18,7 +18,7 @@ export async function Header({ back }: { back: string }) {
             <label htmlFor="persona" className="text-muted">
               Shopping as
             </label>
-            <select id="persona" name="persona" defaultValue={shopper?.key ?? ''} className="rounded-sm border border-border bg-raised px-2 py-1.5">
+            <select id="persona" name="persona" required defaultValue={shopper?.key ?? ''} className="rounded-sm border border-border bg-raised px-2 py-1.5">
               <option value="" disabled>
                 Choose a demo shopper
               </option>
