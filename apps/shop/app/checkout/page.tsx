@@ -21,9 +21,9 @@ export default async function Checkout() {
             <>
               <div className="rounded-md border border-border bg-surface p-4 text-sm">
                 <p className="font-medium">Deliver to {shopper.name}</p>
-                <p className="text-muted">{shopper.city} · +91 {shopper.phone}</p>
+                <p className="text-muted">{shopper.city ? `${shopper.city} · ` : ''}+91 {shopper.phone}</p>
               </div>
-              <PayForm totalPaise={cart.totalPaise} cards={cards} vpa={shopper.vpa} />
+              <PayForm totalPaise={cart.totalPaise} cards={cards} vpa={shopper.vpa ?? ''} />
             </>
           ) : (
             <p className="text-muted">Choose who is shopping (top right) to see saved cards and UPI.</p>

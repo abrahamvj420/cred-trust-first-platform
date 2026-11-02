@@ -32,14 +32,19 @@ export function Login() {
       <div className="flex flex-col gap-3">
         <p className="text-overline uppercase text-accent">Prototype · synthetic data</p>
         <h1 className="text-display">Pay bills. Earn rewards. Save only when it’s real.</h1>
-        <p className="text-callout text-muted">Choose a demo member to sign in. No real accounts, cards or money.</p>
+        <p className="text-callout text-muted">Join as a new member, or choose a demo member to sign in. No real accounts, cards or money.</p>
       </div>
       {error ? <ErrorState message={error} onRetry={load} /> : !personas ? <LoadingScreen label="Loading members" /> : (
-        <List>
-          {personas.map((p) => (
-            <ListRow key={p.key} onClick={() => login(p.key)} leading={<Avatar name={p.name} />} title={busy === p.key ? 'Signing in…' : `${p.name} · ${p.city}`} subtitle={p.tagline} chevron />
-          ))}
-        </List>
+        <div className="flex flex-col gap-3">
+          <List>
+            <ListRow href="/signup" leading={<Avatar icon="plus" />} title="New member" subtitle="Sign up from the start" chevron />
+          </List>
+          <List>
+            {personas.map((p) => (
+              <ListRow key={p.key} onClick={() => login(p.key)} leading={<Avatar name={p.name} />} title={busy === p.key ? 'Signing in…' : p.city ? `${p.name} · ${p.city}` : p.name} subtitle={p.tagline} chevron />
+            ))}
+          </List>
+        </div>
       )}
     </main>
   );

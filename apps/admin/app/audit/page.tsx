@@ -18,21 +18,21 @@ export default function Audit() {
     audit: (await credAdmin(credApi.admin.audit, { query: { limit: 200 } })).entries,
     members: (await credAdmin(credApi.admin.members)).members,
   }));
-  const name = (id: string | null) => (id ? (q.data?.members.find((m) => m.id === id)?.name ?? 'Deleted member') : 'system');
-  const tone = (a: string) => (a.startsWith('privacy.') ? 'accent' : a.includes('withdrawn') || a.includes('revoked') ? 'warning' : a.startsWith('rule.') ? 'accent' : 'muted');
+  const name = (id: string | null, action = '') => (id ? (q.data?.members.find((m) => m.id === id)?.name ?? 'Deleted member') : action.startsWith('notice.') ? 'New sign-up' : 'system');
+  const tone = (a: string) => (a.startsWith('privacy.') || a.startsWith('notice.') ? 'accent' : a.includes('withdrawn') || a.includes('revoked') ? 'warning' : a.startsWith('rule.') ? 'accent' : 'muted');
   return (
-    <Page title="Permissions & audit" subtitle="Every grant, withdrawal and privacy action, and everything CRED did" live={q.live}>
+    <Page title="Permissions & audit" subtitle="Every notice agreed, grant, withdrawal and privacy action, and everything CRED did" live={q.live}>
       {q.error ? <p className="text-sm text-negative">{q.error}</p> : null}
       <Section title="Permission log">
         <DataTable
           head={['When', 'Member', 'Actor', 'Action', 'Scope', 'Details']}
-          rows={(q.data?.perms ?? []).map((e) => [time(e.at), name(e.memberId), e.actor, <Tag key="a" tone={tone(e.action)}>{e.action}</Tag>, e.target ?? '', <span key="d" className="text-xs text-muted">{details(e.details)}</span>])}
+          rows={(q.data?.perms ?? []).map((e) => [time(e.at), name(e.memberId, e.action), e.actor, <Tag key="a" tone={tone(e.action)}>{e.action}</Tag>, e.target ?? '', <span key="d" className="text-xs text-muted">{details(e.details)}</span>])}
         />
       </Section>
       <Section title="Audit log">
         <DataTable
           head={['When', 'Member', 'Actor', 'Action', 'Target', 'Details']}
-          rows={(q.data?.audit ?? []).map((e) => [time(e.at), name(e.memberId), e.actor, <Tag key="a" tone={tone(e.action)}>{e.action}</Tag>, <span key="t" className="font-mono text-xs">{e.target ?? ''}</span>, <span key="d" className="text-xs text-muted">{details(e.details)}</span>])}
+          rows={(q.data?.audit ?? []).map((e) => [time(e.at), name(e.memberId, e.action), e.actor, <Tag key="a" tone={tone(e.action)}>{e.action}</Tag>, <span key="t" className="font-mono text-xs">{e.target ?? ''}</span>, <span key="d" className="text-xs text-muted">{details(e.details)}</span>])}
         />
       </Section>
     </Page>

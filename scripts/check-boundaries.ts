@@ -52,6 +52,11 @@ const rules: Rule[] = [
     pattern: /\b(app|fastify|server)\.(get|post|put|patch|delete|route)\(/,
   },
   {
+    name: 'Sign-up has no tick boxes and bundles no Smart Savings',
+    files: files('apps/cred/app/signup').filter(isSource),
+    pattern: /type=["']checkbox["']|defaultChecked|smart.?savings/i,
+  },
+  {
     name: 'Only the admin control room may call /sim (DEMO_MODE exception)',
     files: files('apps').filter(isSource),
     pattern: /['"`]\/sim\//,

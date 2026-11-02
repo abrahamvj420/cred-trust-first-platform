@@ -26,6 +26,11 @@ export function billOutcome(b: SettledBill): BillOutcome {
   return 'missed';
 }
 
+/** The membership gate: full at or above the rule's score, otherwise limited (UPI and bill pay only). */
+export function membershipFor(creditScore: number, rules: RuleValues = DEFAULT_RULES): 'full' | 'limited' {
+  return creditScore >= rules.membershipMinScore ? 'full' : 'limited';
+}
+
 const TIER_ORDER = LADDER_TIERS.map((t) => t.tier) as CreditTier[];
 const rank = (t: CreditTier) => TIER_ORDER.indexOf(t);
 

@@ -20,13 +20,13 @@ apps/
   admin       Next.js: CRED internal console (ops, risk, privacy logs) + "Demo control room" tab
   shop        Next.js: "ShopKart", a demo merchant store with card and UPI checkout
   ecosystem   Next.js: outside-world screens, each with its own branding and route: Mock Bank
-              (card OTP, statements, salary credits), UPI PIN page, Account Aggregator consent
+              (card OTP, card linking, statements, salary credits), UPI PIN page, Account Aggregator consent
               page, insurer, fund house, lender and health-app pages
 services/
   cred-api        Fastify + TS: CRED's real backend. Ingests transactions, runs the offer engine,
                   permissions, audit log, real-time push to the member app (server-sent events)
   ecosystem-api   Fastify + TS: one service with namespaces /bank, /gateway, /upi, /aa, /lender,
-                  /insurer, /fundhouse, /wearable. Talks to cred-api only through signed webhooks
+                  /insurer, /fundhouse, /wearable, /bureau. Talks to cred-api only through signed webhooks
                   and REST, like real partners
 packages/
   types     shared Zod schemas and TS types for every API request/response and every webhook
@@ -147,6 +147,7 @@ UPI payments made from the CRED app go through the mock UPI switch and are seen 
 - Service status: every app and API shown green or red
 - Switch persona; fire scenarios (big purchase, partial bill payment, fund sale, insurer renewal, wearable sync); advance time by a month
 - Reset demo button (same as `pnpm seed`)
+- Reset sign-ups button (removes people who signed up in the app; personas and clock stay)
 
 ## Key numbers for demo maths
 
@@ -230,6 +231,53 @@ Every screen: loading, empty and error states; AA contrast; 44px tap targets; la
 - **ShopKart** is a real store: 12-product catalogue (`apps/shop/lib/catalog.ts`; slugs `aero-14`, `studio-27`, `usb-c-cable` are used by tests), product pages, a cookie cart, checkout with card (gateway → Mock Bank OTP) or UPI (gateway collect → SimUPI PIN page; refused above ₹1 lakh), order confirmation. Nothing is pre-selected at checkout. Gateway UPI payments are not reported to CRED (CRED sees only UPI made from its own app).
 - **Ecosystem portals:** every partner has a customer-facing page in its own brand (`?c=per_<persona>` picks the customer): `/bank`, `/upi`, `/aa`, `/insurer`, `/fundhouse`, `/lender`, `/health`, plus a directory at `/`. They read only ecosystem-api (`auth: 'page'` endpoints). New themes `lender` and `health`.
 - **Loan against holdings:** CRED sizes the pledge at its own loan-to-value and rounds pledged units **up** (3 decimals), so the pledge never falls a fraction short of the lender's cap.
+
+## Conventions added for sign-up
+
+- **Order (DPDP):** welcome → notice → phone → code → date of birth → name and email → credit check → gate → first card → home. The notice comes before any data. Wording lives in `packages/types/src/notice.ts`; change it → bump `NOTICE_VERSION`.
+- **Nothing stored early:** `agree` writes an anonymous `NoticeAgreement` and audit `notice.agreed` (`memberId` null). Phone and date of birth live only in a signed `sgn.` token (30 min, in memory on the screen). `details` creates the member (`new_<hex>`, membership `pending`) and ties the agreement to them. Under 18: agreement and audit line are deleted; nothing is kept.
+- **Membership:** `pending | full | limited` on `Member` (seeded personas default to `full`). `membershipFor` with rule `membershipMinScore` (750). Enforced by `checkMembership` on every member request (`services/cred-api/src/membership.ts`, allow-lists) and in the engine: `limitedMembership` stops every feature in the stress check with `not_eligible`, before any help card. Privacy is open in every state.
+- **Mock bureau:** `/bureau/v1/score-checks`, once per member (concurrent requests share one run). A phone ending in 0 scores below 750 (`bureauScoreFor`).
+- **New person's world:** `POST /bank/v1/customers/enrol` builds it on first sight with `signupFixture` → `buildPersonaWorld(fixture, { today, persona })` → `seedPerson`, the seed's own code. The UPI ID comes back from here.
+- **Add a card:** `POST /v1/signup/card` → Mock Bank page `/bank/link/:linkRef` (any 6 digits) → webhook `bank.card.linked` with card, 6 settled bills plus the open one, 90 days of purchases → CRED creates the card and sets the ladder from the in-full streak → `/signup/card/return` polls.
+- **`MemberKey`** is any member's key; `PersonaKey` is only the five seeded personas. Control room, sessions and scenarios take `MemberKey`.
+- **Reset sign-ups:** `/sim/signups/reset` (cred-api) and `/sim/v1/signups/reset` (ecosystem-api). Reset demo removes them too.
+- `pnpm screenshots signup` runs the sign-up journey in a browser; other names run the full sweep.
+
+## Sign-up brief (as given)
+
+Before M8, build member sign-up on its own. Same rules: tests and boundary checker green or STOP and report; commit "Sign-up with notice and membership gate", push; add a section to REVIEW.md with decisions and screenshots in docs/screenshots/signup/; keep CLAUDE.md updated.
+
+Flow in the CRED app: welcome → phone number → OTP (demo: any 6 digits, with a small "demo" hint) → name and email → notice screen → credit score check via a mock bureau in ecosystem-api → membership gate → add first card → home.
+
+Notice screen (the key screen, design it carefully):
+- One short summary at the top: what CRED collects to run your membership, and why.
+- Expandable itemised list: phone, name, email, card details, credit score, each with its purpose.
+- How to withdraw consent, how to complain, and the data protection contact.
+- English/Hindi toggle.
+- One "Agree and continue" button. Nothing pre-ticked. No marketing consent and no Smart Savings bundled.
+- A line: "We'll only ask about personalised savings later, if it can save you money."
+- Log the notice version, language and agreement with a timestamp; show it in admin's permission and audit log.
+
+Membership gate:
+- Score at or above the rule setting → full membership → add first card (through the Mock Bank) → home.
+- Below → a supportive "not yet" screen with limited access (UPI and bill pay only), no credit offers, and tips to improve the score. Leave a clear placeholder for the secured-card product coming in M8.
+
+Also:
+- "New member" entry on the persona picker; "Reset sign-ups" in the control room.
+- The new member works like the seeded personas across every existing feature (Smart Savings prompt at the first real money moment, permissions, privacy area, offers).
+- Match the M4 design system and supportive wording rules.
+
+Tests: happy path, below-threshold path, notice logged with version and language, nothing pre-ticked, Smart Savings not asked during sign-up, a new member getting the Smart Savings prompt later on a big purchase. Stop when done.
+
+DPDP alignment fixes:
+1. Move the notice screen to right after welcome, BEFORE any data is collected (phone, name, email come after "Agree and continue").
+2. The notice must state the right to complain to the Data Protection Board of India, not only to CRED.
+3. Add a date-of-birth step; under-18s get a polite "CRED is for adults" screen and nothing is stored.
+4. Add a short "Your rights" section: access, correction, erasure, and nominating someone to act for you.
+5. State what withdrawal means: membership ends, but existing loans and policies with partners continue.
+6. Name the credit score check explicitly in the summary: "We'll check your credit score with a credit bureau to confirm eligibility."
+Add tests: no member data stored before agreement; under-18 stopped with nothing stored.
 
 ## M7 brief (as given)
 

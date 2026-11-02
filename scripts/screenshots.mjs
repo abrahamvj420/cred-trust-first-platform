@@ -34,6 +34,7 @@ const log = (...a) => console.log('•', ...a);
 // ── API helpers (setup only; the UI is what's under test) ──────────────────
 const STAFF = { email: 'ops@cred.example', password: 'trust-first-demo' };
 let staffToken = null;
+let consoleSignedIn = false;
 async function http(url, { method = 'GET', body, headers = {} } = {}) {
   // Console endpoints need the demo staff session
   if (url.includes('/admin/v1/') && !url.endsWith('/admin/v1/login')) {
@@ -197,6 +198,231 @@ async function clickText(text, selector = 'button, a, label') {
 // Case-insensitive: innerText applies CSS text-transform (overlines are uppercase)
 const waitText = (t, ms = 15000) => until(() => page.evaluate((x) => document.body.innerText.toLowerCase().includes(x.toLowerCase()), t), `text "${t}"`, ms);
 
+// ── Sign-up journey (pnpm screenshots signup) ───────────────────────────────
+/** Sets an input the way typing does, so React sees it (date inputs included). */
+async function fill(label, value) {
+  await until(
+    () =>
+      page.evaluate(
+        (l, v) => {
+          const lab = [...document.querySelectorAll('label')].find((x) => x.textContent.includes(l));
+          const input = lab && document.getElementById(lab.htmlFor);
+          if (!input) return false;
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, v);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          return true;
+        },
+        label,
+        value,
+      ),
+    `fill "${label}"`,
+  );
+}
+const expectThat = (ok, what) => {
+  if (!ok) failures.push(`sign-up: ${what}`);
+};
+const shotHere = async (label, name) => {
+  await settle();
+  await check(label, { shot: name });
+};
+
+async function toNotice() {
+  await page.goto(`${CRED}/status`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(`${CRED}/signup`, { waitUntil: 'domcontentloaded' });
+  // A click before hydration does nothing, so keep trying until the notice appears
+  await until(
+    () =>
+      page.evaluate(() => {
+        if (document.body.innerText.includes('Agree and continue')) return true;
+        [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Get started'))?.click();
+        return false;
+      }),
+    'the notice',
+  );
+}
+async function agreeAndConfirmPhone() {
+  await clickText('Agree and continue', 'button');
+  await waitText('Your phone number');
+}
+async function enterPhoneAndCode(phone, shots = false) {
+  await fill('Mobile number', phone);
+  if (shots) await shotHere('sign-up phone', 'signup-06-phone');
+  await clickText('Send code', 'button');
+  await waitText('Enter the code');
+  await fill('6-digit code', '123456');
+  if (shots) await shotHere('sign-up code', 'signup-07-code');
+  await clickText('Confirm', 'button');
+  await waitText('Your date of birth');
+}
+async function enterDetails(name, email, shots = false) {
+  await fill('Full name', name);
+  await fill('Email', email);
+  if (shots) await shotHere('sign-up details', 'signup-10-details');
+  await clickText('Continue', 'button');
+}
+
+async function signupJourney() {
+  const phoneFull = '9876512341';
+  const phoneLow = '9876512340';
+
+  await page.goto(`${CRED}/status`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => localStorage.clear());
+  await visit(CRED, 'member picker', { shot: 'signup-01-picker' });
+  await waitText('New member');
+  await clickText('New member', 'a');
+  await waitText('Get started');
+  await shotHere('welcome', 'signup-02-welcome');
+
+  // The notice comes before anything is asked
+  await clickText('Get started', 'button');
+  await waitText('Agree and continue');
+  await shotHere('notice', 'signup-03-notice');
+  const form = await page.evaluate(() => ({
+    inputs: document.querySelectorAll('main input, main select, main textarea').length,
+    ticked: document.querySelectorAll('input:checked, input[type=checkbox]').length,
+    agree: [...document.querySelectorAll('button')].filter((b) => b.textContent.includes('Agree')).length,
+    text: document.body.innerText,
+  }));
+  expectThat(form.inputs === 0, `the notice asks for nothing, but has ${form.inputs} input(s)`);
+  expectThat(form.ticked === 0, `the notice has ${form.ticked} tick box(es)`);
+  expectThat(form.agree === 1, `the notice should have one agree button, has ${form.agree}`);
+  expectThat(!/smart savings|marketing consent/i.test(form.text), 'the notice bundles something else');
+  for (const line of ['We’ll check your credit score with a credit bureau to confirm eligibility.', 'Data Protection Board of India', 'Your rights', 'existing loans and policies with partners continue', 'We’ll only ask about personalised savings later, if it can save you money.', 'privacy@cred.example']) {
+    expectThat(form.text.includes(line), `the notice is missing: ${line}`);
+  }
+  await page.evaluate(() => document.querySelector('details summary').click());
+  await waitText('Credit score');
+  await shotHere('notice itemised', 'signup-04-notice-itemised');
+  await clickText('हिन्दी', 'button');
+  await waitText('सहमत हूँ और आगे बढ़ें');
+  await shotHere('notice in Hindi', 'signup-05-notice-hindi');
+  await clickText('English', 'button');
+  await waitText('Agree and continue');
+
+  // Under 18: stopped, nothing kept
+  await agreeAndConfirmPhone();
+  await enterPhoneAndCode('9876555502', true);
+  await fill('Date of birth', '2012-03-04');
+  await shotHere('sign-up date of birth', 'signup-08-dob');
+  await clickText('Continue', 'button');
+  await waitText('CRED is for adults');
+  await shotHere('under 18', 'signup-09-under-18');
+  const after18 = await http(`${CRED_API}/admin/v1/audit?limit=50`);
+  expectThat(!after18.entries.some((e) => e.action === 'notice.agreed'), 'an under-18’s agreement stayed in the log');
+
+  // Full membership
+  await toNotice();
+  await agreeAndConfirmPhone();
+  await enterPhoneAndCode(phoneFull);
+  await fill('Date of birth', '1995-06-15');
+  await clickText('Continue', 'button');
+  await waitText('About you');
+  await enterDetails('Tara Iyer', 'tara@example.com', true);
+  await waitText('You’re in', 30000);
+  await shotHere('membership gate', 'signup-11-gate-full');
+  await clickText('Add your first card', 'a');
+  await waitText('Continue to Mock Bank');
+  await fill('Last 4 digits', '6611');
+  await clickText('Visa', 'label');
+  await shotHere('add card', 'signup-12-add-card');
+  const ticked = await page.evaluate(() => document.querySelectorAll('input[type=radio]:checked').length);
+  expectThat(ticked === 1, 'only the network the member chose is selected');
+  await clickText('Continue to Mock Bank', 'button');
+  await until(() => page.evaluate(() => location.href.includes('/bank/link/')), 'Mock Bank page');
+  await waitText('wants to link your card');
+  await fill('6-digit OTP', '123456');
+  await shotHere('Mock Bank approval', 'signup-13-mock-bank');
+  await clickText('Approve', 'button');
+  await until(() => page.evaluate((c) => location.href === `${c}/`, CRED), 'home after the card', 30000);
+  await waitText('Upcoming bills');
+  await shotHere('new member home', 'signup-14-home');
+
+  // Nothing asked yet; the prompt arrives with the first big purchase
+  const token = await page.evaluate(() => localStorage.getItem('cred_demo_token'));
+  const perms = await http(`${CRED_API}/v1/permissions`, { headers: asMember(token) });
+  expectThat(perms.permissions.length === 0, 'a permission was granted during sign-up');
+  const text = await page.evaluate(() => document.body.innerText);
+  expectThat(!/smart savings/i.test(text), 'Smart Savings appeared on the first home screen');
+
+  for (const [url, label, shot] of [
+    ['/cards', 'cards', null],
+    ['/upi', 'UPI', null],
+    ['/rewards', 'rewards', null],
+    ['/profile', 'profile', 'signup-15-profile'],
+    ['/profile/privacy', 'privacy', 'signup-16-privacy'],
+    ['/profile/privacy/knows', 'what CRED knows', 'signup-17-what-cred-knows'],
+    ['/profile/notice', 'notice in profile', 'signup-18-notice-in-profile'],
+    ['/credit', 'credit', null],
+    ['/protect', 'protect', null],
+    ['/wealth', 'wealth', null],
+    ['/loans', 'loans', null],
+  ]) {
+    await visit(`${CRED}${url}`, `new member: ${label}`, { shot });
+  }
+
+  // The new member can shop: picked in the store's own switch, then the laptop through the real checkout
+  await page.setViewport({ width: 1280, height: 860, deviceScaleFactor: 1 });
+  await page.goto('http://localhost:3002/', { waitUntil: 'domcontentloaded' });
+  await until(() => page.evaluate(() => [...document.querySelectorAll('#persona option')].some((o) => o.textContent.includes('Tara Iyer'))), 'ShopKart lists the new member');
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  const m = { 'x-merchant-key': process.env.SHOPKART_MERCHANT_KEY };
+  const { cards } = await http(`${ECO_API}/gateway/v1/shoppers/${phoneFull}/saved-cards`, { headers: m });
+  const created = await http(`${ECO_API}/gateway/v1/payments`, { method: 'POST', headers: m, body: { orderId: `SS-new-${Date.now()}`, amountPaise: 1_50_000_00, description: 'Aero 14 Laptop', shopperPhone: phoneFull, returnUrl: 'http://localhost:3002/order/x', instrument: { method: 'card', cardToken: cards[0].token } } });
+  await http(`${ECO_API}/bank/v1/card-auth/${created.nextAction.url.split('/').at(-1)}/otp`, { method: 'POST', body: { otp: '123456' } });
+  await drain();
+  await visit(`${CRED}/`, 'new member: big purchase', {});
+  await waitText('Smart Savings');
+  await shotHere('Smart Savings prompt', 'signup-19-smart-savings-prompt');
+
+  // Below the score
+  await toNotice();
+  await agreeAndConfirmPhone();
+  await enterPhoneAndCode(phoneLow);
+  await fill('Date of birth', '1998-01-20');
+  await clickText('Continue', 'button');
+  await waitText('About you');
+  await enterDetails('Dev Rao', 'dev@example.com');
+  await waitText('Not yet', 30000);
+  await waitText('Secured card');
+  await shotHere('not yet', 'signup-20-not-yet');
+  await visit(`${CRED}/`, 'limited home, no card', { shot: 'signup-21-limited-home' });
+  const limited = await page.evaluate(() => document.body.innerText);
+  expectThat(!/Borrow better|Cover & claims|Invest & goals/.test(limited), 'limited home shows credit, cover or investing');
+  await clickText('Add your card', 'a');
+  await waitText('Continue to Mock Bank');
+  await fill('Last 4 digits', '4242');
+  await clickText('RuPay', 'label');
+  await clickText('Continue to Mock Bank', 'button');
+  await until(() => page.evaluate(() => location.href.includes('/bank/link/')), 'Mock Bank page');
+  await waitText('wants to link your card');
+  await fill('6-digit OTP', '123456');
+  await clickText('Approve', 'button');
+  await until(() => page.evaluate((c) => location.href === `${c}/`, CRED), 'home after the card', 30000);
+  await waitText('Upcoming bills');
+  await waitText('•••• 4242');
+  await shotHere('limited home, with card', 'signup-22-limited-home-card');
+  await visit(`${CRED}/upi`, 'limited: UPI', {});
+  await visit(`${CRED}/cards`, 'limited: cards', {});
+  await visit(`${CRED}/profile`, 'limited: profile', { shot: 'signup-23-limited-profile' });
+  await visit(`${CRED}/profile/privacy/knows`, 'limited: what CRED knows', {});
+  await page.goto(`${CRED}/credit`, { waitUntil: 'domcontentloaded' });
+  await until(() => page.evaluate(() => location.pathname === '/signup/not-yet'), 'a closed screen leads to the membership screen');
+  await waitText('Not yet');
+
+  // Admin and control room
+  await adminVisit(`${ADMIN}/audit`, 'audit with notice', 'signup-25-admin-audit');
+  const audit = await page.evaluate(() => document.body.innerText);
+  expectThat(audit.includes('notice.agreed'), 'admin’s log doesn’t show the notice agreement');
+  await adminVisit(`${ADMIN}/members`, 'members with membership', 'signup-26-admin-members');
+  await adminVisit(`${ADMIN}/demo`, 'control room', 'signup-27-control-room');
+  await until(() => page.evaluate(() => document.body.innerText.includes('Tara')), 'the control room lists sign-ups');
+  await clickText('Reset sign-ups', 'button');
+  await until(() => page.evaluate(() => document.body.innerText.includes('2 member(s)')), 'sign-ups reset');
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  log('sign-up: notice first, under 18 stopped, full and limited paths, Smart Savings later, admin log, reset');
+}
+
 // ── Run ─────────────────────────────────────────────────────────────────────
 if (existsSync(OUT)) rmSync(OUT, { recursive: true });
 mkdirSync(OUT, { recursive: true });
@@ -205,6 +431,17 @@ await reset();
 // Signed-out
 await page.goto(`${CRED}/status`, { waitUntil: 'domcontentloaded' });
 await page.evaluate(() => localStorage.clear());
+if (milestone === 'signup') {
+  await signupJourney();
+  await browser.close();
+  await reset();
+  if (failures.length) {
+    console.error(`\n${failures.length} problem(s):\n${failures.map((f) => `  ✗ ${f}`).join('\n')}`);
+    process.exit(1);
+  }
+  console.log(`\nSign-up journey passed. Screenshots in docs/screenshots/${milestone}/`);
+  process.exit(0);
+}
 await visit(CRED, 'sign-in', { shot: '01-sign-in' });
 
 // Every screen, every persona
@@ -569,7 +806,6 @@ await visit(`${CRED}/cards/not-a-card`, 'error state', { shot: '28-error-state',
 // ── M6 flows ────────────────────────────────────────────────────────────────
 
 /** Desktop console: wider viewport, same checks. Signs in as the demo staff member first. */
-let consoleSignedIn = false;
 async function adminVisit(url, label, shot) {
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 1 });
   if (!consoleSignedIn && url.startsWith(ADMIN)) {

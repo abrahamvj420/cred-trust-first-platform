@@ -35,6 +35,8 @@ export interface MemberSnapshot {
   helpThisMonth: number;
   /** On a repayment plan: no new credit until it's done. */
   onRepaymentPlan?: boolean;
+  /** Below the membership score: UPI and bill pay only, no credit suggestions. */
+  limitedMembership?: boolean;
 }
 
 export interface CardPurchaseTrigger {

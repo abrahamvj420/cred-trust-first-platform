@@ -25,6 +25,14 @@ model Member {
   age         Int
   vpa         String
   memberSince String
+  /// Given at sign-up only (seeded personas have none)
+  email       String?
+  dob         String?
+  /// pending | full | limited (validated by Membership in @cred/types)
+  membership  String    @default("full")
+  creditScore Int?
+  creditBureau String?
+  creditCheckedAt DateTime?
   deletedAt   DateTime?
   createdAt   DateTime  @default(now())
 
@@ -50,6 +58,19 @@ model Member {
   rewards           RewardEntry[]
   alerts            MemberAlert[]
   complaints        Complaint[]
+  noticeAgreements  NoticeAgreement[]
+}
+
+/// Agreement to the privacy notice. Anonymous until the person gives a name and email (no personal data before that).
+model NoticeAgreement {
+  id            String   @id @default(cuid())
+  memberId      String?
+  noticeVersion String
+  /// en | hi
+  language      String
+  agreedAt      DateTime @default(now())
+
+  member Member? @relation(fields: [memberId], references: [id], onDelete: SetNull)
 }
 
 /// A concern the member raised; admin resolves it with a note back to them

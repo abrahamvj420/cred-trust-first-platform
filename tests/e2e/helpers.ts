@@ -9,6 +9,7 @@ import {
   type CallInput,
   type Endpoint,
   type EndpointResponse,
+  type MemberKey,
   type PersonaKey,
   type Scenario,
 } from '@cred/types';
@@ -150,7 +151,7 @@ export async function advance(months = 1) {
   return r;
 }
 
-export const scenario = async (s: Scenario, personaKey: PersonaKey, dealerCover: 'comprehensive' | 'third_party' = 'comprehensive') => {
+export const scenario = async (s: Scenario, personaKey: MemberKey, dealerCover: 'comprehensive' | 'third_party' = 'comprehensive') => {
   const r = await eco(ecosystemApi.sim.scenario, { body: { scenario: s, personaKey, dealerCover } });
   await settle();
   return r;

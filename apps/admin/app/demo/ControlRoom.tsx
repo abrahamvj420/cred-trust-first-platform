@@ -1,8 +1,8 @@
 'use client';
 
-import { ApiError, call, credApi, DEMO_PERSONAS, ecosystemApi, type MemberAction, type PersonaKey, type Scenario } from '@cred/types';
+import { ApiError, call, credApi, DEMO_PERSONAS, ecosystemApi, type MemberAction, type MemberKey, type Scenario } from '@cred/types';
 import { Button, Surface } from '@cred/ui';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { CRED_API } from '@/lib/api';
 
 /** The control-room exception (CLAUDE.md): only here may an app call /sim, and only with DEMO_MODE=true. */
@@ -58,7 +58,15 @@ const FEATURES: { title: string; hint: string; triggers: Trigger[] }[] = [
 ];
 
 export function ControlRoom() {
-  const [persona, setPersona] = useState<PersonaKey>('aarav');
+  const [persona, setPersona] = useState<MemberKey>('aarav');
+  // Seeded personas plus anyone who signed up in the app
+  const [people, setPeople] = useState<{ key: MemberKey; name: string }[]>([...DEMO_PERSONAS]);
+  const loadPeople = () =>
+    call(CRED_API, credApi.member.personas).then(
+      (r) => setPeople(r.personas),
+      () => undefined,
+    );
+  useEffect(() => void loadPeople(), []);
   const [busy, setBusy] = useState<string | null>(null);
   const [log, setLog] = useState<{ at: string; text: string; ok: boolean }[]>([]);
 
@@ -87,7 +95,7 @@ export function ControlRoom() {
         <Surface className="flex flex-wrap items-center gap-4 p-4">
           <fieldset className="flex flex-wrap items-center gap-2">
             <legend className="mb-2 w-full text-xs text-muted">Persona (scenarios act on them; Show on phone switches the CRED app)</legend>
-            {DEMO_PERSONAS.map((p) => (
+            {people.map((p) => (
               <label key={p.key} className={`cursor-pointer rounded-md border px-3 py-1.5 text-sm transition-calm ${persona === p.key ? 'border-accent bg-raised' : 'border-border hover:border-muted'}`}>
                 <input type="radio" name="persona" className="sr-only" checked={persona === p.key} onChange={() => setPersona(p.key)} />
                 {p.name.split(' ')[0]}
@@ -119,6 +127,30 @@ export function ControlRoom() {
 
         <Surface className="flex flex-wrap items-center justify-between gap-3 p-4">
           <div>
+            <h3 className="text-sm font-semibold">Reset sign-ups</h3>
+            <p className="text-xs text-muted">Removes everyone who signed up in the app. The five personas and the clock stay as they are.</p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={busy === 'Reset sign-ups'}
+            disabled={!!busy}
+            onClick={() =>
+              run('Reset sign-ups', async () => {
+                const world = await call(ECO_API, ecosystemApi.sim.resetSignups);
+                const members = await call(CRED_API, credApi.platform.simResetSignups);
+                setPersona('aarav');
+                await loadPeople();
+                return `${members.removed} member(s) and ${world.removed} person(s) in the outside world removed`;
+              })
+            }
+          >
+            Reset sign-ups
+          </Button>
+        </Surface>
+
+        <Surface className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
             <h3 className="text-sm font-semibold">Reset demo</h3>
             <p className="text-xs text-muted">Same as pnpm seed: every persona, the clock and rule settings back to the start.</p>
           </div>
@@ -130,6 +162,8 @@ export function ControlRoom() {
               run('Reset demo', async () => {
                 await call(ECO_API, ecosystemApi.sim.reset);
                 await call(CRED_API, credApi.platform.simReset);
+                setPersona('aarav');
+                await loadPeople();
                 return 'both worlds reset to 2 Nov 2026';
               })
             }

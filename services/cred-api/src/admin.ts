@@ -1,7 +1,7 @@
 import { formatRuleValue, LADDER_TIERS, RULE_DEFINITIONS, stressSignals, validateRuleChange, type RuleKey } from '@cred/engine';
 import { handlers, HttpError, notFound, unauthorized } from '@cred/service-kit';
 import { verifyPassword } from '@cred/db/seed';
-import { credApi, FeatureKey, ReasonCode, type StaffSession } from '@cred/types';
+import { credApi, FeatureKey, Membership, ReasonCode, type StaffSession } from '@cred/types';
 import { issueStaffToken } from './session';
 import type { Ctx } from './context';
 import { toAudit, toComplaint, toDecision, toLoan, toTxn } from './mappers';
@@ -38,12 +38,14 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       members: await Promise.all(
         members.map(async (m) => ({
           id: m.id,
-          personaKey: m.personaKey as 'aarav',
+          personaKey: m.personaKey,
           name: m.name,
           phoneMasked: `XXXXXX${m.phone.slice(-4)}`,
           city: m.city,
           memberSince: m.memberSince,
           vpa: m.vpa,
+          membership: Membership.parse(m.membership),
+          creditScore: m.creditScore,
           smartSavings: m.permissions.some((p) => p.scope === 'smart_savings' && p.status === 'granted'),
           stressed: stressSignals(await buildSnapshot(ctx, m.id), activeRules()).length > 0,
           offersThisMonth: m.offers.filter((o) => o.simDate.startsWith(month)).length,
@@ -74,7 +76,7 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
   });
 
   h.on(credApi.admin.permissionLog, async ({ query }) => ({
-    entries: (await db.auditLog.findMany({ where: { ...where(query.memberId), OR: [{ action: { startsWith: 'permission.' } }, { action: { startsWith: 'aa.' } }, { action: { startsWith: 'wellness.' } }] }, orderBy: { at: 'desc' }, take: query.limit })).map(toAudit),
+    entries: (await db.auditLog.findMany({ where: { ...where(query.memberId), OR: [{ action: { startsWith: 'permission.' } }, { action: { startsWith: 'aa.' } }, { action: { startsWith: 'wellness.' } }, { action: { startsWith: 'notice.' } }] }, orderBy: { at: 'desc' }, take: query.limit })).map(toAudit),
   }));
 
   h.on(credApi.admin.audit, async ({ query }) => ({

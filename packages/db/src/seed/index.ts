@@ -8,12 +8,14 @@ import { buildPersonaWorld } from './world';
 export { PERSONA_FIXTURES } from './personas';
 export { buildPersonaWorld, type PersonaWorld } from './world';
 export { summariseActivityWeek } from './wearable';
+export { bureauScoreFor, signupFixture, signupPersona } from './signup';
+export { seedPerson } from './ecosystem';
 export { DEMO_UPI_PIN } from './ecosystem';
 export * as catalog from './catalog';
 export { DEMO_STAFF, hashPassword, verifyPassword } from './staff';
 export { prng, addDays as addDaysYmd, addMonths as addMonthsYmd, at as atIst } from './util';
 
-export const buildWorlds = () => PERSONA_FIXTURES.map(buildPersonaWorld);
+export const buildWorlds = () => PERSONA_FIXTURES.map((f) => buildPersonaWorld(f));
 
 /** Reset cred.db only (cred-api's /sim/reset). */
 export async function resetCred(db: CredDb = createCredDb()): Promise<void> {

@@ -1,5 +1,6 @@
 import { aaEndpoints, bankEndpoints, gatewayEndpoints, upiEndpoints } from './money-rails';
 import {
+  bureauEndpoints,
   ecosystemPlatformEndpoints,
   fundhouseEndpoints,
   insurerEndpoints,
@@ -14,6 +15,7 @@ export * from './providers';
 /** Every ecosystem-api endpoint, by namespace. */
 export const ecosystemApi = {
   bank: bankEndpoints,
+  bureau: bureauEndpoints,
   gateway: gatewayEndpoints,
   upi: upiEndpoints,
   aa: aaEndpoints,

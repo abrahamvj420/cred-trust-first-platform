@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { Bps, Id, IsoDate, IsoDateTime, NonNegativePaise, Ok, PositivePaise, ServiceStatus } from '../common';
 import { endpoint } from '../contract';
 import { EmiInstallment, Vehicle, WaitingPeriod } from '../domain';
-import { ClaimStatus, DealerCover, HoldingKind, LoanKind, LoanStatus, PersonaKey, PolicyKind, Relation, Scenario, WearableProvider } from '../enums';
+import { ClaimStatus, DealerCover, HoldingKind, LoanKind, LoanStatus, MemberKey, PolicyKind, Relation, Scenario, WearableProvider } from '../enums';
 
 // ── /lender ───────────────────────────────────────────────────────────────────
 
@@ -349,15 +349,15 @@ export const simEndpoints = {
     auth: 'demo',
     summary: 'Fire a real-world scenario for a persona',
     /** new_vehicle: what the dealer sold with the car. */
-    body: z.object({ scenario: Scenario, personaKey: PersonaKey, dealerCover: DealerCover.default('comprehensive') }),
-    response: z.object({ scenario: Scenario, personaKey: PersonaKey, eventsEmitted: z.number().int().nonnegative(), note: z.string() }),
+    body: z.object({ scenario: Scenario, personaKey: MemberKey, dealerCover: DealerCover.default('comprehensive') }),
+    response: z.object({ scenario: Scenario, personaKey: MemberKey, eventsEmitted: z.number().int().nonnegative(), note: z.string() }),
   }),
   approveConsents: endpoint({
     method: 'POST',
     path: '/sim/v1/aa/approve',
     auth: 'demo',
     summary: 'Approve a persona’s pending AA requests, sharing every account offered (control room only)',
-    body: z.object({ personaKey: PersonaKey }),
+    body: z.object({ personaKey: MemberKey }),
     response: z.object({ approved: z.number().int().nonnegative() }),
   }),
   outbox: endpoint({
@@ -366,6 +366,13 @@ export const simEndpoints = {
     auth: 'demo',
     summary: 'Webhooks not yet delivered (tests and the control room wait for zero)',
     response: z.object({ pending: z.number().int().nonnegative() }),
+  }),
+  resetSignups: endpoint({
+    method: 'POST',
+    path: '/sim/v1/signups/reset',
+    auth: 'demo',
+    summary: 'Remove the people who signed up in the app (and their bureau checks and payments)',
+    response: z.object({ removed: z.number().int().nonnegative() }),
   }),
   reset: endpoint({
     method: 'POST',
@@ -383,5 +390,17 @@ export const ecosystemPlatformEndpoints = {
     auth: 'none',
     summary: 'Service health',
     response: ServiceStatus,
+  }),
+} as const;
+
+/** Trustline Credit Bureau (mock): one score check per sign-up, on the member's agreement to the notice. */
+export const bureauEndpoints = {
+  scoreCheck: endpoint({
+    method: 'POST',
+    path: '/bureau/v1/score-checks',
+    auth: 'partner',
+    summary: 'Credit score for a person, given the reference of their consent',
+    body: z.object({ fullName: z.string(), phone: z.string(), dob: IsoDate, consentRef: Id }),
+    response: z.object({ checkRef: Id, bureauName: z.string(), score: z.number().int().min(300).max(900), checkedAt: IsoDateTime }),
   }),
 } as const;

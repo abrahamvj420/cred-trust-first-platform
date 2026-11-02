@@ -1,4 +1,4 @@
-import { billOutcome, ladderAfter, tierLabel } from '@cred/engine';
+import { billOutcome, ladderAfter, tierForStreak, tierLabel } from '@cred/engine';
 import { CreditTier, formatBps, formatInr, type WebhookEvent, type WebhookEventOf } from '@cred/types';
 import { onConsentUpdated, refreshFromAa } from './aa';
 import { dataUpdated, raiseAlert } from './alerts';
@@ -47,6 +47,8 @@ async function dispatch(ctx: Ctx, event: WebhookEvent): Promise<string | null> {
       return onStatement(ctx, event);
     case 'bank.card.payment.received':
       return onPayment(ctx, event);
+    case 'bank.card.linked':
+      return onCardLinked(ctx, event);
     case 'lender.loan.decided':
       return onLoanDecided(ctx, event);
     case 'lender.loan.disbursed':
@@ -118,6 +120,66 @@ async function onCardTransaction(ctx: Ctx, event: WebhookEventOf<'bank.card.tran
     })().catch((e) => ctx.log.error({ err: e, eventId: event.id }, 'engine run failed'));
   });
   return card.memberId;
+}
+
+/**
+ * The member approved linking their card at the bank: the same card, bills and
+ * purchases the seed gives a persona. The bank's record of bills paid in full counts
+ * towards the credit ladder, as it does for every member.
+ */
+async function onCardLinked(ctx: Ctx, event: WebhookEventOf<'bank.card.linked'>): Promise<string | null> {
+  const { db } = ctx;
+  const d = event.data;
+  const member = await db.member.findUnique({ where: { id: d.clientRef } });
+  if (!member || member.deletedAt) return null;
+  if (await db.card.findUnique({ where: { cardRef: d.cardRef } })) return member.id;
+
+  const paymentKind = (s: (typeof d.statements)[number]) => (s.paidPaise >= s.totalDuePaise ? 'full' : s.paidPaise <= s.minDuePaise ? 'minimum' : 'custom');
+  const card = await db.card.create({
+    data: {
+      id: `card_${member.personaKey}`,
+      memberId: member.id,
+      issuerName: d.bankName,
+      network: d.network,
+      last4: d.last4,
+      limitPaise: d.limitPaise,
+      outstandingPaise: d.outstandingPaise,
+      billingDay: d.billingDay,
+      dueDay: d.dueDay,
+      customerRef: d.customerRef,
+      cardRef: d.cardRef,
+    },
+  });
+  for (const s of d.statements) {
+    await db.statement.create({
+      data: {
+        cardId: card.id,
+        externalRef: s.statementRef,
+        periodStart: s.periodStart,
+        periodEnd: s.periodEnd,
+        totalDuePaise: s.totalDuePaise,
+        minDuePaise: s.minDuePaise,
+        paidPaise: s.paidPaise,
+        dueDate: s.dueDate,
+        status: !s.payment ? 'open' : s.paidPaise >= s.totalDuePaise ? 'paid' : 'partial',
+        settledOn: s.payment ? s.dueDate : null,
+        ladderOutcome: s.payment ? (s.paidPaise >= s.totalDuePaise ? 'paid_in_full' : 'part_paid') : null,
+        payments: s.payment ? { create: { externalRef: s.payment.paymentRef, kind: paymentKind(s), amountPaise: s.payment.amountPaise, paidAt: new Date(s.payment.receivedAt), onTime: s.payment.onTime } } : undefined,
+      },
+    });
+  }
+  await db.cardTransaction.createMany({ data: d.transactions.map((t) => ({ cardId: card.id, externalRef: t.transactionRef, merchant: t.merchant, category: t.category, amountPaise: t.amountPaise, postedAt: new Date(t.postedAt) })) });
+
+  let streak = 0;
+  for (const s of [...d.statements].reverse()) {
+    if (!s.payment) continue;
+    if (s.paidPaise < s.totalDuePaise || !s.payment.onTime) break;
+    streak++;
+  }
+  await db.ladderProgress.update({ where: { memberId: member.id }, data: { tier: tierForStreak(streak).tier, onTimeStreak: streak } });
+  await ctx.audit({ memberId: member.id, actor: 'partner', action: 'card.linked', target: card.id, details: { bank: d.bankName, last4: d.last4, statementsShared: d.statements.length } });
+  dataUpdated(ctx, member.id, 'cards');
+  return member.id;
 }
 
 /** Statement closed at the bank (with any interest on what was carried). */

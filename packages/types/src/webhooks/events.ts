@@ -62,6 +62,39 @@ export const BankCardStatementGenerated = base(
   }),
 );
 
+/** The customer approved linking this card to CRED at the bank: the card, plus recent history the bank shares. */
+export const BankCardLinked = base(
+  'bank.card.linked',
+  'bank',
+  z.object({
+    /** CRED's own reference, given when it asked for the link. */
+    clientRef: Id,
+    customerRef: Id,
+    cardRef: Id,
+    bankName: z.string(),
+    network: z.string(),
+    last4: z.string(),
+    limitPaise: NonNegativePaise,
+    outstandingPaise: NonNegativePaise,
+    billingDay: z.number().int(),
+    dueDay: z.number().int(),
+    /** Oldest first; the newest may be unpaid. */
+    statements: z.array(
+      z.object({
+        statementRef: Id,
+        periodStart: IsoDate,
+        periodEnd: IsoDate,
+        totalDuePaise: NonNegativePaise,
+        minDuePaise: NonNegativePaise,
+        paidPaise: NonNegativePaise,
+        dueDate: IsoDate,
+        payment: z.object({ paymentRef: Id, amountPaise: PositivePaise, receivedAt: IsoDateTime, onTime: z.boolean() }).nullable(),
+      }),
+    ),
+    transactions: z.array(z.object({ transactionRef: Id, merchant: z.string(), category: TxnCategory, amountPaise: PositivePaise, postedAt: IsoDateTime })),
+  }),
+);
+
 export const BankCardPaymentReceived = base(
   'bank.card.payment.received',
   'bank',
@@ -279,6 +312,7 @@ export const WebhookEvent = z.discriminatedUnion('type', [
   BankCardTransactionPosted,
   BankCardStatementGenerated,
   BankCardPaymentReceived,
+  BankCardLinked,
   UpiTransactionCompleted,
   AaConsentUpdated,
   AaFiReady,

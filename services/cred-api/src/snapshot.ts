@@ -51,6 +51,7 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
     verifiedMonthlyIncomePaise: member.income?.monthlyNetPaise ?? null,
     existingEmiPaise: member.loans.filter((l) => l.status === 'disbursed').reduce((a, l) => a + l.emiPaise, 0),
     onRepaymentPlan: member.loans.some((l) => l.kind === 'repayment_plan'),
+    limitedMembership: member.membership === 'limited',
     // The limit in force: the ladder tier's, raised by verified salary
     ladder: { tier, limitPaise: creditLine(tier, member.income?.monthlyNetPaise ?? null, false, activeRules()).limitPaise },
     offers: {

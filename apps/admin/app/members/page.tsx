@@ -25,16 +25,17 @@ function Members() {
   );
   const member = list.data?.members.find((m) => m.id === id);
   return (
-    <Page title={member ? member.name : 'Members'} subtitle={member ? `${member.city} · ${member.vpa}` : 'Every member, with what the engine sees'} live={list.live}>
+    <Page title={member ? member.name : 'Members'} subtitle={member ? `${member.city ? `${member.city} · ` : ''}${member.vpa}` : 'Every member, with what the engine sees'} live={list.live}>
       {list.error ? <p className="text-sm text-negative">{list.error}</p> : null}
       {!id ? (
         <DataTable
-          head={['Member', 'City', 'Smart Savings', 'Signals', 'Offers this month', 'Active offer']}
+          head={['Member', 'City', 'Membership', 'Smart Savings', 'Signals', 'Offers this month', 'Active offer']}
           rows={(list.data?.members ?? []).map((m) => [
             <a key="n" className="text-accent hover:underline" href={`/members?id=${m.id}`}>
               {m.name}
             </a>,
-            m.city,
+            m.city || '—',
+            m.membership === 'full' ? <Tag>full{m.creditScore ? ` · ${m.creditScore}` : ''}</Tag> : <Tag tone="warning">{m.membership}{m.creditScore ? ` · ${m.creditScore}` : ''}</Tag>,
             m.smartSavings ? <Tag tone="positive">on</Tag> : <Tag>off</Tag>,
             m.stressed ? <Tag tone="warning">strain: help, not credit</Tag> : <Tag>none</Tag>,
             m.offersThisMonth,

@@ -1,5 +1,5 @@
 import { CARD_INTEREST_MONTHLY_BPS, GST_BPS } from '@cred/engine';
-import { personaByKey, SIM_START_DATE, type DemoPersona, type TxnCategory } from '@cred/types';
+import { personaByKey, SIM_START_DATE, type DemoPersona, type PersonaKey, type TxnCategory } from '@cred/types';
 import { SPEND_MERCHANTS } from './catalog';
 import type { PayPlan, PersonaFixture } from './personas';
 import { addDays, addMonths, at, daysBetween, parseYmd, prng, rupees, ymd } from './util';
@@ -55,8 +55,8 @@ function paidFor(plan: PayPlan, total: number, min: number): { amount: number; k
 }
 
 /** Latest statement close: the most recent billing day before sim start. */
-function latestPeriodEnd(billingDay: number): string {
-  const { y, m, d } = parseYmd(SIM_START_DATE);
+function latestPeriodEnd(billingDay: number, today: string): string {
+  const { y, m, d } = parseYmd(today);
   return d > billingDay ? ymd(y, m, billingDay) : ymd(y, m - 1, billingDay);
 }
 
@@ -97,13 +97,15 @@ function spendCharges(
   });
 }
 
-export function buildPersonaWorld(fixture: PersonaFixture): PersonaWorld {
-  const persona = personaByKey(fixture.key);
+/** `today` and `persona` let the simulation build the same world for someone who signs up later. */
+export function buildPersonaWorld(fixture: PersonaFixture, opts: { today?: string; persona?: DemoPersona } = {}): PersonaWorld {
+  const today = opts.today ?? SIM_START_DATE;
+  const persona = opts.persona ?? personaByKey(fixture.key as PersonaKey);
   const key = fixture.key;
   const rand = prng(`world:${key}`);
   const { card } = fixture;
   const H = card.history.length;
-  const lastEnd = latestPeriodEnd(card.billingDay);
+  const lastEnd = latestPeriodEnd(card.billingDay, today);
 
   const statements: WorldStatement[] = [];
   const charges: WorldCharge[] = [];
@@ -163,7 +165,7 @@ export function buildPersonaWorld(fixture: PersonaFixture): PersonaWorld {
 
   // Unbilled spend since the last statement closed
   const unbilledFrom = addDays(lastEnd, 1);
-  const unbilledDays = daysBetween(unbilledFrom, SIM_START_DATE);
+  const unbilledDays = daysBetween(unbilledFrom, today);
   const unbilled = spendCharges(rand, key, H + 1, null, unbilledFrom, unbilledDays, Math.round((card.monthlySpendPaise * unbilledDays) / 30));
   charges.push(...unbilled);
   const outstandingPaise = carry + unbilled.reduce((a, c) => a + c.amountPaise, 0);
@@ -171,7 +173,7 @@ export function buildPersonaWorld(fixture: PersonaFixture): PersonaWorld {
   // Six months of salary credits and everyday debits
   const bankTxns: PersonaWorld['bankTxns'] = [];
   for (let k = 5; k >= 0; k--) {
-    const month = addMonths(SIM_START_DATE.slice(0, 8) + '01', -k);
+    const month = addMonths(today.slice(0, 8) + '01', -k);
     bankTxns.push({ kind: 'salary', amountPaise: fixture.salaryPaise, narration: `SALARY ${fixture.employer.toUpperCase()}`, at: at(month, 9) });
     bankTxns.push({ kind: 'debit', amountPaise: -Math.round(fixture.salaryPaise * (0.25 + rand() * 0.1)), narration: 'RENT / HOUSING', at: at(addDays(month, 4), 11) });
     bankTxns.push({ kind: 'debit', amountPaise: -Math.round(fixture.salaryPaise * (0.1 + rand() * 0.1)), narration: 'UPI / EVERYDAY SPENDS', at: at(addDays(month, 12), 19) });
@@ -183,7 +185,7 @@ export function buildPersonaWorld(fixture: PersonaFixture): PersonaWorld {
 
   const stepDays = fixture.wearable
     ? Array.from({ length: 28 }, (_, d) => ({
-        date: addDays(SIM_START_DATE, d - 28),
+        date: addDays(today, d - 28),
         steps: Math.round(fixture.behaviour.avgDailySteps * (0.6 + rand() * 0.8)),
       }))
     : [];
@@ -199,7 +201,7 @@ export function buildPersonaWorld(fixture: PersonaFixture): PersonaWorld {
     payeeName: u.payeeName,
     amountPaise: rupees(Math.round(u.min + rand() * (u.max - u.min))),
     note: u.note,
-    at: at(addDays(SIM_START_DATE, -(i * 3 + 1)), 10 + i * 3, 15),
+    at: at(addDays(today, -(i * 3 + 1)), 10 + i * 3, 15),
     rrn: String(600_000_000_000 + Math.floor(rand() * 99_999_999_999)),
   }));
 

@@ -36,6 +36,9 @@ export async function api<E extends Endpoint>(endpoint: E, input: CallInput<E> =
       session.clear();
       window.location.href = '/';
     }
+    // The gate is enforced by cred-api; a closed screen sends the member to where they stand, not to an error
+    if (e instanceof ApiError && e.code === 'limited_membership') window.location.href = '/signup/not-yet';
+    if (e instanceof ApiError && e.code === 'signup_incomplete') window.location.href = '/signup/check';
     throw e;
   }
 }

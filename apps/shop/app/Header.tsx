@@ -1,11 +1,10 @@
-import { DEMO_PERSONAS } from '@cred/types';
 import { CATEGORIES } from '@/lib/catalog';
-import { currentShopper, readCart } from '@/lib/server';
+import { currentShopper, readCart, shoppers } from '@/lib/server';
 import { chooseShopper } from './actions';
 
 /** Store header: logo, categories, who's shopping (demo), cart. */
 export async function Header({ back }: { back: string }) {
-  const [shopper, cart] = await Promise.all([currentShopper(), readCart()]);
+  const [shopper, cart, people] = await Promise.all([currentShopper(), readCart(), shoppers()]);
   return (
     <header className="sticky top-0 z-10 border-b border-border bg-surface">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3">
@@ -22,7 +21,7 @@ export async function Header({ back }: { back: string }) {
               <option value="" disabled>
                 Choose a demo shopper
               </option>
-              {DEMO_PERSONAS.map((p) => (
+              {people.map((p) => (
                 <option key={p.key} value={p.key}>
                   {p.name}
                 </option>

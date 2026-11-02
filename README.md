@@ -82,7 +82,7 @@ Every app and service answers `GET /status`. Once the control room shows all six
 
 | Where | How |
 |---|---|
-| CRED member app | Tap a persona on the sign-in screen (no password; synthetic members). The control room's **Show on phone** switches it too. |
+| CRED member app | Tap **New member** to sign up (use made-up details; a phone ending in 0 gets a lower credit score), or tap a persona on the sign-in screen (no password; synthetic members). The control room's **Show on phone** switches it too. |
 | CRED console (admin) | **`ops@cred.example`** / **`trust-first-demo`** (seeded staff account, Ananya Rao). Separate from the member app. |
 | Bank OTP, lender e-sign, insurer OTP | Any 6 digits work; the demo code is shown on screen. |
 | UPI PIN | **1234** |
@@ -120,6 +120,7 @@ curl -X POST localhost:4000/sim/member-actions -H 'content-type: application/jso
 - **`Cannot find module './generated/...'`:** run `pnpm db:generate`. The Prisma clients are generated and not committed.
 - **`fetch failed` / `ECONNREFUSED :4100` (or :4000) on a page:** an app is running without its API, usually a server left over from an earlier run. Run `pnpm demo` again; it stops leftovers first.
 - **A page keeps reloading ("Fast Refresh") or looks stale:** stop and run `pnpm demo` again; it clears the Next.js caches.
+- **A number "already has a membership":** press **Reset sign-ups** in the control room, or use another number.
 - **Something looks stuck after a lot of clicking:** press **Reset demo** in the control room (same as `pnpm seed`).
 - **Fonts fail to load on first run:** the apps load Google Fonts via `next/font`, which needs internet access the first time.
 
@@ -210,6 +211,20 @@ Continue from journey 3.
 4. **Control room → ₹1.5L laptop on the card.** CRED shows **no offer**, only a supportive help card ("Talk to us", "See a plan"). **Console → Decisions:** the engine stopped at the stress check, with the reason logged.
 5. Tap **See a plan**. Choose **3, 6 or 12 months**: each shows the monthly amount and the total interest versus carrying it on the card. Pick **6 months**, tick the acknowledgement → **Set up this plan** → OTP → **Confirm my plan**. The plan is created by the partner lender and opens in **Loans**.
 6. **CRED → Credit:** no credit line is shown while he is on the plan, only a link to it. Nothing new is suggested until the plan is done.
+
+### Journey 7 · A new member signs up (notice first · membership gate)
+
+Use made-up details. Control room → **Reset sign-ups** if you've done this before.
+
+1. CRED app: if signed in, Profile → **Switch member**. Tap **New member**, then **Get started**.
+2. The notice comes before anything is asked. Open **See each item and its purpose**, switch to **हिन्दी** and back. Point out: nothing to tick, the Data Protection Board line, your rights, and "We'll only ask about personalised savings later". Tap **Agree and continue**.
+3. Console → **Permissions & audit**: `notice.agreed` with version and language, from a "New sign-up" (no personal data yet).
+4. Phone **9876512341** → **Send code** → any 6 digits → **Confirm**.
+5. Under-18 path (optional, then start again from step 1): date of birth **2012-03-04** → **Continue** → "CRED is for adults". Nothing is kept.
+6. Date of birth **1995-06-15** → **Continue**. Enter a name and email → **Continue**. The score check runs: **You're in**.
+7. **Add your first card**: any 4 digits, choose **Visa** → **Continue to Mock Bank** → any 6 digits → **Approve**. Home shows the card and bill. No Smart Savings prompt yet.
+8. ShopKart: **Shopping as** → the new member → **Switch**. Buy the **Aero 14** by card (any 6-digit OTP). The Smart Savings prompt appears on the phone, the first time it can save money.
+9. Below the score: Profile → **Switch member** → **New member** again, with a phone ending in 0 (**9876512340**). You get **Not yet**, with the score, tips and the Secured card placeholder. Home shows only UPI and bill pay.
 
 ### What each journey covers
 

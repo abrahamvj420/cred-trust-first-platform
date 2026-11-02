@@ -1,4 +1,4 @@
-import type { PermissionScope, PersonaKey, Relation } from '@cred/types';
+import type { PermissionScope, Relation } from '@cred/types';
 
 /** How a month's card bill was paid. */
 export type PayPlan = 'full' | 'minimum' | { pct: number };
@@ -9,7 +9,8 @@ export type PayPlan = 'full' | 'minimum' | { pct: number };
  * legitimately have received.
  */
 export interface PersonaFixture {
-  key: PersonaKey;
+  /** A seeded persona's key, or new_<hex> for someone who signed up. */
+  key: string;
   dob: string;
   panMock: string;
   employer: string;

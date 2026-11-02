@@ -3,6 +3,7 @@ export * from './enums';
 export * from './contract';
 export * from './domain';
 export * from './personas';
+export * from './notice';
 export * from './ports';
 export * from './cred-api';
 export * from './ecosystem-api';

@@ -48,6 +48,7 @@ export default function Privacy() {
         {error ? <Notice>{error}</Notice> : null}
       </Card>
       <List>
+        <ListRow href="/profile/notice" leading={<Avatar icon="doc" />} title="Privacy notice" subtitle="What you agreed to, your rights, and how to complain" />
         <ListRow href="/profile/privacy/delete" leading={<Avatar icon="close" />} title="Delete my data" subtitle="What’s deleted, and what must be kept" />
       </List>
     </Screen>

@@ -34,4 +34,18 @@ describe('repayment plan', () => {
       expect(r.decision.explanation).not.toMatch(BANNED_MEMBER_WORDS);
     }
   });
+
+  it('limited membership: every feature says no, even when the member asks, with no prompt for Smart Savings', () => {
+    const s = fullPayer({ limitedMembership: true, smartSavings: 'never' });
+    const asked = evaluateBigSpend(s, laptop, null, { origin: 'member_initiated' });
+    const proactive = evaluateBigSpend(s, laptop, null);
+    const sw = evaluateBalanceSwitch(s, { statementRef: 'x', remainingPaise: 30_000_00, paidPaise: 10_000_00 }, null);
+    const fl = evaluateFloater(s, { people: [{ id: 'a', name: 'A', relation: 'parent', age: 60 }], coverPaise: 5_00_000_00, existing: null, structure: 'base_vs_topup' }, null);
+    for (const r of [asked, proactive, sw, fl]) {
+      if (r.kind !== 'decision') throw new Error('expected decision');
+      expect(r.decision.reasons).toEqual(['not_eligible']);
+      expect(r.decision.offer).toBeNull();
+      expect(r.decision.explanation).not.toMatch(BANNED_MEMBER_WORDS);
+    }
+  });
 });

@@ -144,6 +144,15 @@ export type Partner = z.infer<typeof Partner>;
 export const PersonaKey = z.enum(['aarav', 'priya', 'sneha', 'kabir', 'rohan']);
 export type PersonaKey = z.infer<typeof PersonaKey>;
 
+/** A seeded persona's key, or `new_<hex>` for someone who signed up in the app. */
+export const MemberKey = z.string().regex(/^[a-z0-9_]+$/);
+export type MemberKey = z.infer<typeof MemberKey>;
+export const SIGNUP_KEY_PREFIX = 'new_';
+
+/** pending: signed up, score not checked yet. limited: UPI and bill pay only, no credit suggestions. */
+export const Membership = z.enum(['pending', 'full', 'limited']);
+export type Membership = z.infer<typeof Membership>;
+
 export const Scenario = z.enum([
   'big_purchase',
   'partial_bill_payment',

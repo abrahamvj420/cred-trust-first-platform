@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { BANNED_MEMBER_WORDS } from '../member-copy';
 import { fullPayer, stressed } from '../test/fixtures';
-import { billOutcome, creditLine, evaluateLadderChange, ladderAfter, nextTier } from './credit-ladder';
+import { DEFAULT_RULES } from '../rules';
+import { billOutcome, creditLine, evaluateLadderChange, ladderAfter, membershipFor, nextTier } from './credit-ladder';
 
 describe('bill outcome', () => {
   it('paid in full on time, part paid, missed', () => {
@@ -74,5 +75,13 @@ describe('ladder decisions (shown as available, never pushed)', () => {
     if (r.kind !== 'decision') throw new Error('expected decision');
     expect(r.decision.outcome).toBe('help');
     expect(r.decision.explanation).not.toMatch(BANNED_MEMBER_WORDS);
+  });
+});
+
+describe('membership gate', () => {
+  it('is full at or above the rule’s score, limited below it, and follows the rule setting', () => {
+    expect(membershipFor(750)).toBe('full');
+    expect(membershipFor(749)).toBe('limited');
+    expect(membershipFor(749, { ...DEFAULT_RULES, membershipMinScore: 700 })).toBe('full');
   });
 });

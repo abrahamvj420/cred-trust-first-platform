@@ -31,7 +31,12 @@ export async function seedEcosystem(db: EcosystemDb, worlds: PersonaWorld[]): Pr
   await db.scheme.createMany({ data: FUND_HOUSE.schemes.map((s) => ({ ...s, id: `sch_${s.code}`, fundHouseId: FUND_HOUSE.id })) });
   await db.vpa.createMany({ data: OTHER_VPAS.map((v) => ({ handle: v.handle, name: v.name })) });
 
-  for (const w of worlds) {
+  for (const w of worlds) await seedPerson(db, w);
+}
+
+/** One person's whole outside world: bank, card and history, UPI, policies, funds, health app. */
+export async function seedPerson(db: EcosystemDb, w: PersonaWorld): Promise<void> {
+  {
     const f = w.fixture;
     const p = w.persona;
     await db.person.create({

@@ -1,5 +1,5 @@
 import 'server-only';
-import { call, DEMO_PERSONAS, type CallInput, type Endpoint, type EndpointResponse, type PersonaKey } from '@cred/types';
+import { call, DEMO_PERSONAS, ecosystemApi, type CallInput, type Endpoint, type EndpointResponse } from '@cred/types';
 import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { productBySlug, type Product } from './catalog';
@@ -15,9 +15,15 @@ export const SHOPPER_COOKIE = 'sk_shopper';
 export const CART_COOKIE = 'sk_cart';
 export const orderCookie = (orderId: string) => `sk_order_${orderId}`;
 
+/** Everyone who can shop in the demo, including people who signed up in the app. */
+export async function shoppers() {
+  return (await gateway(ecosystemApi.gateway.shoppers).catch(() => ({ shoppers: DEMO_PERSONAS.map((p) => ({ ...p, vpa: p.vpa as string | null })) }))).shoppers;
+}
+
 export async function currentShopper() {
-  const key = (await cookies()).get(SHOPPER_COOKIE)?.value as PersonaKey | undefined;
-  return DEMO_PERSONAS.find((p) => p.key === key) ?? null;
+  const key = (await cookies()).get(SHOPPER_COOKIE)?.value;
+  if (!key) return null;
+  return (await shoppers()).find((p) => p.key === key) ?? null;
 }
 
 const CartLines = z.array(z.object({ slug: z.string(), qty: z.number().int().min(1).max(9) }));

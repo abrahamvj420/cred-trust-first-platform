@@ -76,6 +76,39 @@ export const bankEndpoints = {
     params: z.object({ customerRef: Id }),
     response: BankOverview,
   }),
+  enrol: endpoint({
+    method: 'POST',
+    path: '/bank/v1/customers/enrol',
+    auth: 'partner',
+    summary: 'Find a customer by phone for a payment app, and their UPI ID (the simulation creates the synthetic customer on first sight)',
+    body: z.object({ demoKey: z.string(), name: z.string(), phone: z.string(), dob: IsoDate }),
+    response: z.object({ customerRef: Id, vpa: z.string() }),
+  }),
+  startCardLink: endpoint({
+    method: 'POST',
+    path: '/bank/v1/card-links',
+    auth: 'partner',
+    summary: 'A payment app asks to link a card; the customer approves on the bank’s page',
+    body: z.object({ customerRef: Id, clientRef: Id, last4: z.string().regex(/^\d{4}$/), network: z.enum(['visa', 'mastercard', 'rupay']), returnUrl: z.url() }),
+    response: z.object({ linkRef: Id, approvalUrl: z.url() }),
+  }),
+  cardLink: endpoint({
+    method: 'GET',
+    path: '/bank/v1/card-links/:linkRef',
+    auth: 'page',
+    summary: 'What the customer is approving',
+    params: z.object({ linkRef: Id }),
+    response: z.object({ linkRef: Id, bankName: z.string(), requester: z.string(), customerName: z.string(), phoneMasked: z.string(), cardMasked: z.string(), network: z.string(), status: z.enum(['pending', 'approved', 'rejected']) }),
+  }),
+  decideCardLink: endpoint({
+    method: 'POST',
+    path: '/bank/v1/card-links/:linkRef/decide',
+    auth: 'page',
+    summary: 'Customer approves (demo: any 6-digit OTP) or declines. Approval tells CRED by webhook',
+    params: z.object({ linkRef: Id }),
+    body: z.discriminatedUnion('decision', [z.object({ decision: z.literal('approve'), otp: z.string().regex(/^\d{6}$/) }), z.object({ decision: z.literal('reject') })]),
+    response: z.object({ status: z.enum(['approved', 'rejected']), returnUrl: z.string() }),
+  }),
   payCardBill: endpoint({
     method: 'POST',
     path: '/bank/v1/card-bill-payments',
@@ -143,6 +176,13 @@ export const CreatePaymentRequest = z.object({
 export type CreatePaymentRequest = z.infer<typeof CreatePaymentRequest>;
 
 export const gatewayEndpoints = {
+  shoppers: endpoint({
+    method: 'GET',
+    path: '/gateway/v1/shoppers',
+    auth: 'merchant',
+    summary: 'Demo: the people who can shop, for the store’s “Shopping as” switch',
+    response: z.object({ shoppers: z.array(z.object({ key: z.string(), name: z.string(), phone: z.string(), city: z.string(), vpa: z.string().nullable() })) }),
+  }),
   savedCards: endpoint({
     method: 'GET',
     path: '/gateway/v1/shoppers/:shopperPhone/saved-cards',

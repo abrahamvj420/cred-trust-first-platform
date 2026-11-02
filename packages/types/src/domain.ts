@@ -20,7 +20,7 @@ import {
   OfferStatus,
   PermissionScope,
   PermissionStatus,
-  PersonaKey,
+  MemberKey,
   PolicyKind,
   ReasonCode,
   Relation,
@@ -36,7 +36,7 @@ import {
 
 export const Member = z.object({
   id: Id,
-  personaKey: PersonaKey,
+  personaKey: MemberKey,
   name: z.string(),
   phoneMasked: z.string(),
   city: z.string(),
@@ -47,7 +47,7 @@ export const Member = z.object({
 export type Member = z.infer<typeof Member>;
 
 export const PersonaSummary = z.object({
-  key: PersonaKey,
+  key: MemberKey,
   name: z.string(),
   city: z.string(),
   tagline: z.string(),

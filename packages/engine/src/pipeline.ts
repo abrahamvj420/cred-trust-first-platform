@@ -183,6 +183,14 @@ export function repaymentHelp(s: MemberSnapshot, rules: RuleValues): HelpDraft {
 
 /** Stressed members get help, not credit, whoever asked. A member on a repayment plan is offered nothing new until it's done. */
 export function stressCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): EngineResult | null {
+  if (s.limitedMembership) {
+    return d.stop(
+      'stress',
+      'not_eligible',
+      'Limited membership (credit score below the membership rule): no credit suggestions.',
+      'Your membership covers UPI and bill pay for now, so we won’t suggest credit. Paying bills on time helps your score, and more opens up as it grows.',
+    );
+  }
   if (s.onRepaymentPlan) {
     return d.stop(
       'stress',

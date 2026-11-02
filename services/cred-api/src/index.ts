@@ -1,7 +1,7 @@
 import { createCredDb } from '@cred/db/cred';
 import { resetCred } from '@cred/db/seed';
 import { createService, handlers, HttpError, isDemoMode, loadRootEnv, notFound, requireEnv } from '@cred/service-kit';
-import { credApi, DEMO_PERSONAS, PersonaKey, WEBHOOK_HEADERS, type Member } from '@cred/types';
+import { credApi, DEMO_PERSONAS, SIGNUP_KEY_PREFIX, WEBHOOK_HEADERS, type Member } from '@cred/types';
 import { verifyWebhook } from '@cred/types/signing';
 import { adminHandlers } from './admin';
 import { creditHandlers } from './credit';
@@ -12,7 +12,9 @@ import { protectHandlers } from './protect';
 import { wealthHandlers } from './wealth';
 import { createCtx } from './context';
 import { Hub } from './hub';
+import { checkMembership } from './membership';
 import { memberHandlers } from './member';
+import { signupHandlers } from './signup';
 import { moneyHandlers } from './money';
 import { bearer, issueToken, verifyStaffToken, verifyToken } from './session';
 import { ingestWebhook } from './webhooks';
@@ -24,7 +26,7 @@ const hub = new Hub();
 
 const toMember = (m: { id: string; personaKey: string; name: string; phone: string; city: string; memberSince: string; vpa: string }): Member => ({
   id: m.id,
-  personaKey: PersonaKey.parse(m.personaKey),
+  personaKey: m.personaKey,
   name: m.name,
   phoneMasked: `XXXXXX${m.phone.slice(-4)}`,
   city: m.city,
@@ -38,9 +40,11 @@ const svc = createService({
   checkDb: async () => (await db.$queryRawUnsafe<unknown[]>('SELECT 1')).length === 1,
   simDate: async () => (await db.simState.findUnique({ where: { id: 1 } }))?.currentDate ?? null,
   authenticators: {
-    member: (req) => {
+    member: async (req) => {
       const q = req.query as { token?: string };
-      return verifyToken(bearer(req.headers.authorization) ?? q.token);
+      const claims = verifyToken(bearer(req.headers.authorization) ?? q.token);
+      await checkMembership(db, claims.memberId, req.method, req.routeOptions.url ?? '');
+      return claims;
     },
     // Internal console: staff sign in (demo account seeded); EventSource passes the token as ?token=
     admin: (req) => {
@@ -67,7 +71,15 @@ await loadRules(db);
 const h = handlers()
   .on(credApi.platform.status, () => svc.status())
   .on(credApi.member.personas, async () => ({
-    personas: DEMO_PERSONAS.map((p) => ({ key: p.key, name: p.name, city: p.city, tagline: p.tagline })),
+    personas: [
+      ...DEMO_PERSONAS.map((p) => ({ key: p.key, name: p.name, city: p.city, tagline: p.tagline })),
+      ...(await db.member.findMany({ where: { personaKey: { startsWith: SIGNUP_KEY_PREFIX }, deletedAt: null }, orderBy: { createdAt: 'asc' } })).map((m) => ({
+        key: m.personaKey,
+        name: m.name,
+        city: m.city,
+        tagline: m.membership === 'limited' ? 'Signed up in the app · UPI and bill pay for now' : 'Signed up in the app',
+      })),
+    ],
   }))
   .on(credApi.member.demoLogin, async ({ body }) => {
     const m = await db.member.findUnique({ where: { personaKey: body.personaKey } });
@@ -89,6 +101,7 @@ const h = handlers()
   });
 
 memberHandlers(ctx, h);
+signupHandlers(ctx, h);
 moneyHandlers(ctx, h);
 adminHandlers(ctx, h);
 creditHandlers(ctx, h);

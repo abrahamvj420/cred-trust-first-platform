@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { Id, IsoDateTime } from '../common';
 import { AuditEntry, CardTransaction, Claim, EngineDecision, HelpPlan, Loan, MemberAlert, Offer, Permission } from '../domain';
-import { PermissionScope, PersonaKey } from '../enums';
+import { PermissionScope, MemberKey } from '../enums';
 
 /** Pushed from cred-api to the member app over server-sent events. */
 const ev = <T extends string, D extends z.ZodType>(type: T, data: D) =>
@@ -24,7 +24,7 @@ export const MemberStreamEvent = z.discriminatedUnion('type', [
   ev('alert.created', z.object({ alert: MemberAlert })),
   /** Something the member's screens show changed (statement, ladder, income, holdings, cover, wellness, consent). */
   ev('data.updated', z.object({ area: z.enum(['cards', 'ladder', 'income', 'holdings', 'insurance', 'wellness', 'consent', 'goals', 'complaints', 'loans']) })),
-  ev('demo.persona_switched', z.object({ personaKey: PersonaKey })),
+  ev('demo.persona_switched', z.object({ personaKey: MemberKey })),
   ev('heartbeat', z.object({})),
 ]);
 export type MemberStreamEvent = z.infer<typeof MemberStreamEvent>;

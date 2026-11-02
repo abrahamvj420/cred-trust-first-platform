@@ -5,7 +5,7 @@ import type { PersonaKey } from './enums';
  * and are the link between a person in the ecosystem and a CRED member.
  */
 export interface DemoPersona {
-  key: PersonaKey;
+  key: string;
   name: string;
   phone: string;
   city: string;

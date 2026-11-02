@@ -1,7 +1,7 @@
 import { insuranceKeyFacts, loanKeyFacts } from '@cred/engine';
 import { activeRules, runBigSpend } from './engine-runner';
 import { conflict, forbidden, handlers, HttpError, notFound } from '@cred/service-kit';
-import { credApi, ecosystemApi, InsuranceTerms, LoanTerms, Relation, type AcceptOptionKey, type EngineDecision, type SessionClaims } from '@cred/types';
+import { credApi, ecosystemApi, InsuranceTerms, LoanTerms, Membership, Relation, type AcceptOptionKey, type EngineDecision, type SessionClaims } from '@cred/types';
 import { PURPOSE_FOR_SCOPE, revokeConsent } from './aa';
 import { dataUpdated } from './alerts';
 import type { Ctx } from './context';
@@ -56,7 +56,8 @@ export function memberHandlers(ctx: Ctx, h: H) {
     const card = m.cards[0];
     const bill = card?.statements[0];
     return {
-      member: { id: m.id, personaKey: m.personaKey as 'aarav', name: m.name, phoneMasked: `XXXXXX${m.phone.slice(-4)}`, city: m.city, memberSince: m.memberSince, vpa: m.vpa },
+      member: { id: m.id, personaKey: m.personaKey, name: m.name, phoneMasked: `XXXXXX${m.phone.slice(-4)}`, city: m.city, memberSince: m.memberSince, vpa: m.vpa },
+      membership: Membership.parse(m.membership),
       cards: m.cards.map((c) => toCard(c, c.statements[0])),
       activeOffer: m.offers[0] ? toOffer(m.offers[0]) : null,
       nextBill: bill && card ? { cardId: card.id, statementId: bill.id, totalDuePaise: Math.max(0, bill.totalDuePaise - bill.paidPaise), dueDate: bill.dueDate } : null,

@@ -15,6 +15,7 @@ let dir = '';
 
 export async function setup(): Promise<void> {
   dir = mkdtempSync(path.join(tmpdir(), 'cred-e2e-'));
+  process.env.E2E_DB_DIR = dir; // signup.e2e scans the raw database files
   const env = {
     ...process.env,
     DEMO_MODE: 'true',

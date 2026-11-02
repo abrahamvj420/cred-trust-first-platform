@@ -6,6 +6,7 @@ import { aaHandlers } from './aa';
 import { fundhouseHandlers } from './fundhouse';
 import { insurerHandlers } from './insurer';
 import { lenderHandlers, prepayHandlers } from './lender';
+import { signupHandlers } from './signup';
 import { simHandlers } from './sim';
 import { wearableHandlers } from './wearable';
 import { createOutbox } from './outbox';
@@ -57,6 +58,7 @@ const h = handlers()
   });
 
 railsHandlers(ctx, h);
+signupHandlers(ctx, h);
 billPayHandlers(ctx, h);
 bankPortalHandlers(ctx, h);
 upiHandlers(ctx, h);

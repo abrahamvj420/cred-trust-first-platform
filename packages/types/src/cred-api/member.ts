@@ -20,12 +20,13 @@ import {
   UpiContact,
   UpiPayment,
 } from '../domain';
-import { AaPurpose, BillPaymentKind, PermissionScope, PersonaKey } from '../enums';
+import { AaPurpose, BillPaymentKind, MemberKey, Membership, PermissionScope } from '../enums';
 
 const CardParams = z.object({ cardId: Id });
 
 export const HomeSummary = z.object({
   member: Member,
+  membership: Membership,
   cards: z.array(Card),
   /** The single active offer, if any. Never more than one. */
   activeOffer: Offer.nullable(),
@@ -119,7 +120,7 @@ export const memberEndpoints = {
     path: '/v1/auth/demo-login',
     auth: 'none',
     summary: 'Log in as a demo persona (no real auth)',
-    body: z.object({ personaKey: PersonaKey }),
+    body: z.object({ personaKey: MemberKey }),
     response: z.object({ token: z.string(), member: Member }),
   }),
   home: endpoint({
@@ -314,7 +315,7 @@ export const memberEndpoints = {
 
 export const SessionClaims = z.object({
   memberId: Id,
-  personaKey: PersonaKey,
+  personaKey: MemberKey,
   issuedAt: IsoDateTime,
 });
 export type SessionClaims = z.infer<typeof SessionClaims>;

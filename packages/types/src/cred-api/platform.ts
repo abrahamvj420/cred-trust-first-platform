@@ -16,7 +16,8 @@ import {
   ActivitySummary,
 } from '../domain';
 import { MemberStreamEvent, AdminStreamEvent } from '../events/sse';
-import { DecisionOutcome, FeatureKey, MemberAction, PermissionScope, PersonaKey, ReasonCode } from '../enums';
+import { NoticeLanguage } from '../notice';
+import { DecisionOutcome, FeatureKey, MemberAction, MemberKey, Membership, PermissionScope, ReasonCode } from '../enums';
 import { Complaint } from '../domain';
 import { WebhookAck, WebhookEvent } from '../webhooks/events';
 
@@ -39,6 +40,15 @@ export type WhatCredKnows = z.infer<typeof WhatCredKnows>;
 export const DataExport = z.object({
   generatedAt: IsoDateTime,
   member: Member,
+  /** What was given at sign-up (seeded personas have none of it). */
+  signUp: z.object({
+    email: z.string().nullable(),
+    dateOfBirth: z.string().nullable(),
+    membership: Membership,
+    creditScore: z.number().int().nullable(),
+    creditBureau: z.string().nullable(),
+    noticeAgreements: z.array(z.object({ version: z.string(), language: NoticeLanguage, agreedAt: IsoDateTime })),
+  }),
   permissions: z.array(Permission),
   consents: z.array(AaConsent),
   transactions: z.array(CardTransaction),
@@ -81,6 +91,8 @@ export const privacyEndpoints = {
 // ── Admin console ─────────────────────────────────────────────────────────────
 
 const AdminMemberRow = Member.extend({
+  membership: Membership,
+  creditScore: z.number().int().nullable(),
   smartSavings: z.boolean(),
   stressed: z.boolean(),
   offersThisMonth: z.number().int().nonnegative(),
@@ -339,20 +351,27 @@ export const platformEndpoints = {
     summary: 'Reset cred.db to the seed personas (DEMO_MODE only)',
     response: Ok,
   }),
+  simResetSignups: endpoint({
+    method: 'POST',
+    path: '/sim/signups/reset',
+    auth: 'demo',
+    summary: 'Remove everyone who signed up in the app, leaving the seed personas as they are (DEMO_MODE only)',
+    response: z.object({ removed: z.number().int().nonnegative() }),
+  }),
   simMemberAction: endpoint({
     method: 'POST',
     path: '/sim/member-actions',
     auth: 'demo',
     summary: 'Do something in the app on a persona’s behalf (control room; DEMO_MODE only)',
-    body: z.object({ action: MemberAction, personaKey: PersonaKey }),
-    response: z.object({ action: MemberAction, personaKey: PersonaKey, note: z.string() }),
+    body: z.object({ action: MemberAction, personaKey: MemberKey }),
+    response: z.object({ action: MemberAction, personaKey: MemberKey, note: z.string() }),
   }),
   simSwitchPersona: endpoint({
     method: 'POST',
     path: '/sim/persona',
     auth: 'demo',
     summary: 'Tell the member app to switch persona (DEMO_MODE only)',
-    body: z.object({ personaKey: PersonaKey }),
+    body: z.object({ personaKey: MemberKey }),
     response: Ok,
   }),
 } as const;

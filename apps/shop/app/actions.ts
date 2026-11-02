@@ -1,6 +1,6 @@
 'use server';
 
-import { ecosystemApi, localUrl, PersonaKey } from '@cred/types';
+import { ecosystemApi, localUrl, MemberKey } from '@cred/types';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -11,7 +11,7 @@ const back = (form: FormData) => z.string().startsWith('/').catch('/').parse(for
 
 export async function chooseShopper(form: FormData) {
   // Submitting with no shopper chosen (the placeholder) just goes back; it must never crash the page
-  const key = PersonaKey.safeParse(form.get('persona'));
+  const key = MemberKey.safeParse(form.get('persona'));
   if (key.success) (await cookies()).set(SHOPPER_COOKIE, key.data, { path: '/', sameSite: 'lax' });
   redirect(back(form));
 }

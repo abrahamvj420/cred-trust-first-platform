@@ -95,6 +95,7 @@ model CreditCardAccount {
 
   person     Person          @relation(fields: [personId], references: [id], onDelete: Cascade)
   auths      CardAuth[]
+  links      CardLink[]
   charges    CardCharge[]
   statements CardStatement[]
 }
@@ -113,6 +114,33 @@ model CardAuth {
   createdAt        DateTime @default(now())
 
   card CreditCardAccount @relation(fields: [cardAccountId], references: [id], onDelete: Cascade)
+}
+
+/// A payment app asked to link this card; the customer approves on the bank's page
+model CardLink {
+  id            String   @id @default(cuid())
+  cardAccountId String
+  clientRef     String
+  requester     String
+  last4         String
+  network       String
+  returnUrl     String
+  /// pending | approved | rejected
+  status        String   @default("pending")
+  createdAt     DateTime @default(now())
+
+  card CreditCardAccount @relation(fields: [cardAccountId], references: [id], onDelete: Cascade)
+}
+
+/// A score check at the mock credit bureau, on the reference of the person's consent
+model BureauCheck {
+  id         String   @id @default(cuid())
+  phone      String
+  fullName   String
+  dob        String
+  consentRef String
+  score      Int
+  createdAt  DateTime @default(now())
 }
 
 /// A posted card transaction

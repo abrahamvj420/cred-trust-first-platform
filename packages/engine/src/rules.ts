@@ -22,7 +22,8 @@ export interface RuleDefinition {
     | 'Protection'
     | 'Wellness'
     | 'Wealth management'
-    | 'Repayment plan';
+    | 'Repayment plan'
+    | 'Membership';
   label: string;
   unit: RuleUnit;
   value: number;
@@ -107,6 +108,9 @@ export const RULE_DEFINITIONS = {
   // Repayment plan (help for members carrying a balance)
   planRatePaBps: { group: 'Repayment plan', label: 'Repayment plan rate', unit: 'bps', value: 1200, min: 0, max: 2400, description: 'Yearly rate on a plan to clear a carried card balance; no fee. Far below card interest.' },
   planMinBalancePaise: { group: 'Repayment plan', label: 'Smallest balance for a plan', unit: 'paise', value: 5_000_00, min: 1_000_00, max: 1_00_000_00, description: 'Below this, paying the balance off directly is simpler than a plan.' },
+
+  // Membership gate (sign-up)
+  membershipMinScore: { group: 'Membership', label: 'Credit score for full membership', unit: 'count', value: 750, min: 300, max: 900, description: 'At or above this bureau score, sign-up leads to full membership. Below it: UPI and bill pay only, and no credit suggestions.' },
 } as const satisfies Record<string, RuleDefinition>;
 
 export type RuleKey = keyof typeof RULE_DEFINITIONS;

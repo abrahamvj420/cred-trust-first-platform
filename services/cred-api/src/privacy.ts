@@ -1,5 +1,5 @@
 import { handlers, notFound } from '@cred/service-kit';
-import { credApi, ecosystemApi, formatInr, type SessionClaims, type WhatCredKnows } from '@cred/types';
+import { credApi, ecosystemApi, formatInr, Membership, NoticeLanguage, type SessionClaims, type WhatCredKnows } from '@cred/types';
 import { revokeConsent } from './aa';
 import { dataUpdated } from './alerts';
 import type { Ctx } from './context';
@@ -11,7 +11,7 @@ type Auth = SessionClaims;
 export const RETAINED_FOR_LAW = [
   'Loans taken through CRED: the lender holds the loan and its repayment record, and CRED keeps the loan record for 8 years as lending rules require.',
   'Insurance policies bought through CRED: the insurer holds the policy and claims; CRED keeps a record of the sale.',
-  'The audit log of what CRED did and what you allowed, kept to show we acted with your permission.',
+  'The audit log of what CRED did and what you allowed, including the privacy notice you agreed to, kept to show we acted with your permission.',
   'Complaints you raised, kept until they are closed and for the period regulators require.',
 ];
 
@@ -44,10 +44,15 @@ export function privacyHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         items: [
           { label: 'Name', value: m.name },
           { label: 'Phone', value: `XXXXXX${m.phone.slice(-4)}` },
-          { label: 'City', value: m.city },
+          ...(m.dob ? [{ label: 'Date of birth', value: m.dob }] : []),
+          ...(m.email ? [{ label: 'Email', value: m.email }] : []),
+          ...(m.city ? [{ label: 'City', value: m.city }] : []),
           { label: 'UPI ID', value: m.vpa },
         ],
       },
+      ...(m.creditScore !== null
+        ? [{ title: 'Credit score', source: `${m.creditBureau ?? 'The credit bureau'}, once, when you joined`, permission: null, items: [{ label: 'Score', value: String(m.creditScore) }, { label: 'Used for', value: 'Confirming eligibility for membership' }] }]
+        : []),
       {
         title: 'Your card and bills',
         source: 'Mock Bank, by secure notification each time something happens',
@@ -147,12 +152,21 @@ export function privacyHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         income: true,
         activitySummaries: true,
         audit: true,
+        noticeAgreements: true,
       },
     });
     await ctx.audit({ memberId: auth.memberId, actor: 'member', action: 'privacy.downloaded', target: null });
     return {
       generatedAt: new Date().toISOString(),
-      member: { id: m.id, personaKey: m.personaKey as 'aarav', name: m.name, phoneMasked: `XXXXXX${m.phone.slice(-4)}`, city: m.city, memberSince: m.memberSince, vpa: m.vpa },
+      member: { id: m.id, personaKey: m.personaKey, name: m.name, phoneMasked: `XXXXXX${m.phone.slice(-4)}`, city: m.city, memberSince: m.memberSince, vpa: m.vpa },
+      signUp: {
+        email: m.email,
+        dateOfBirth: m.dob,
+        membership: Membership.parse(m.membership),
+        creditScore: m.creditScore,
+        creditBureau: m.creditBureau,
+        noticeAgreements: m.noticeAgreements.map((n) => ({ version: n.noticeVersion, language: NoticeLanguage.parse(n.language), agreedAt: n.agreedAt.toISOString() })),
+      },
       permissions: m.permissions.map(toPermission),
       consents: m.aaConsents.map(toConsent),
       transactions: m.cards.flatMap((c) => c.transactions.map(toTxn)),
@@ -201,7 +215,7 @@ export function privacyHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       db.domainEvent.deleteMany({ where: { memberId } }),
       db.rewardEntry.deleteMany({ where: { memberId } }),
       db.memberAlert.deleteMany({ where: { memberId } }),
-      db.member.update({ where: { id: memberId }, data: { deletedAt: new Date(), name: 'Deleted member', phone: `deleted_${memberId}`, city: '', vpa: '' } }),
+      db.member.update({ where: { id: memberId }, data: { deletedAt: new Date(), name: 'Deleted member', phone: `deleted_${memberId}`, city: '', vpa: '', email: null, dob: null, creditScore: null, creditBureau: null, creditCheckedAt: null } }),
     ]);
     const deleted = counts.slice(0, -1).reduce((a, c) => a + (c as { count: number }).count, 0);
     const retainedForLaw = RETAINED_FOR_LAW.filter((_, i) => (i === 0 ? keepLoans.length > 0 : i === 1 ? keepPolicies.length > 0 : true));

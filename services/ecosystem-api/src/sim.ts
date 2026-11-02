@@ -1,6 +1,6 @@
 import { catalog, prng } from '@cred/db/seed';
 import { handlers, HttpError, notFound } from '@cred/service-kit';
-import { ecosystemApi, personaByKey, TxnCategory, WORLD_SCENARIOS, type Scenario } from '@cred/types';
+import { ecosystemApi, TxnCategory, WORLD_SCENARIOS, type Scenario } from '@cred/types';
 import { approveConsent, notifyFiReady } from './aa';
 import { addMonthsYmd, simDate, simNow, type Ctx } from './context';
 import { dealerMotorPolicy, progressClaim, renewals } from './insurer';
@@ -272,7 +272,7 @@ export function simHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       }
       case 'claim_update': {
         const claim = await db.insuranceClaim.findFirst({ where: { policy: { personId: person.id }, status: { notIn: ['settled', 'rejected'] } }, orderBy: { createdAt: 'desc' } });
-        if (!claim) throw new HttpError(422, 'no_open_claim', `${personaByKey(body.personaKey).name} has no open claim`);
+        if (!claim) throw new HttpError(422, 'no_open_claim', `${person.name} has no open claim`);
         if (await progressClaim(ctx, claim.id)) events += 1;
         break;
       }

@@ -4,6 +4,107 @@ One section per milestone from M4 onward: what was built, decisions taken withou
 
 ---
 
+## Sign-up · Notice, membership gate and first card
+
+Built before M8, with the DPDP alignment fixes applied from the start. Commit "Sign-up with notice and membership gate" (no tag was asked for). Gate at commit:
+- `pnpm typecheck`: 11 packages.
+- `pnpm test`: 197 unit tests (engine 126, ui 50, types 15, service-kit 6) and the boundary checker (10 rules).
+- `pnpm test:e2e`: 82 cross-service tests, 15 of them new in `signup.e2e.ts`.
+- `pnpm screenshots signup`: the whole journey clicked in a browser, with axe on every screen: no serious or critical findings.
+- The full persona sweep (the same as `pnpm screenshots final`) still passes for all five personas. I ran it to a temporary folder, so `docs/screenshots/final/` is unchanged and its sign-in screen doesn't show the "New member" row.
+
+### What was built
+
+**The flow:** welcome → **notice** → phone → code → date of birth → name and email → credit score check → membership gate → first card → home. This differs from the first brief on purpose: the DPDP fixes moved the notice to before any data is collected.
+
+**Nothing is kept before it has to be.** Agreeing writes one anonymous row (version, language, time). Phone and date of birth then travel only in a short-lived signed token held in the screen's memory. The member record starts at the name and email step, when the agreement is tied to it. Tests search the raw database files for the phone number and date of birth, so this is checked on disk.
+
+**Notice** (`packages/types/src/notice.ts`, served by `GET /v1/signup/notice`):
+- a summary naming the credit score check;
+- an expandable list of six items and their purposes;
+- rights (access, correction, erasure, nominating someone);
+- what withdrawal means;
+- complaints, including the Data Protection Board of India;
+- the data protection contact, and an English/Hindi toggle;
+- one "Agree and continue" button: no inputs, nothing pre-ticked, no marketing consent and no Smart Savings.
+
+Agreement is logged as `notice.agreed` in admin's permission and audit logs, labelled "New sign-up" until a member exists. The member can reread it in Profile → Privacy → Privacy notice.
+
+**Under 18:** a polite "CRED is for adults" screen. The anonymous agreement is deleted too, because a minor can't agree, so nothing is stored at all.
+
+**Membership gate:** the mock Trustline Credit Bureau gives a score; `membershipMinScore` (750) is a live rule setting.
+- At or above: full membership → add a card through a Mock Bank approval page → home.
+- Below: a "not yet" screen with the score, what's open, tips and a Secured card placeholder for M8.
+
+The gate is enforced twice: `checkMembership` guards every member request, and the engine stops every feature with `not_eligible`, including purchases that arrive by webhook.
+
+**Works like a persona:** the outside world for a new person is built by the same code as the seed (`seedPerson`, `buildPersonaWorld`), so the clock, control room, ShopKart, Account Aggregator, portals and privacy area all work. The Smart Savings prompt first appears on a real big purchase.
+
+**Also:** "New member" on the picker, sign-ups listed on the picker and in the control room and ShopKart, **Reset sign-ups** in the control room, membership and score in admin's Members page.
+
+### Decisions I made on my own
+
+| Decision | Why |
+|---|---|
+| Date of birth comes after the phone code, before name and email | You asked for the step but not its place. This way an under-18 gives as little as possible. |
+| Added date of birth to the notice's itemised list, and a line that CRED looks at big purchases "to tell if a saving is worth asking you about"; the summary says "the purposes listed here" | The notice has to cover what really happens. The engine evaluates big purchases before Smart Savings is on, in order to know whether to ask. **Please check this wording.** |
+| Under-18: delete the agreement and its audit line too | "Nothing is stored" taken literally. It means the log doesn't record that an under-18 tried. |
+| Any phone ending in 0 scores below 750; other numbers score 760–839 | The demo needs to pick a path on purpose. The screen says so, and tells people to use made-up details. |
+| Bureau name "Trustline Credit Bureau" | Avoids naming a real bureau. |
+| Limited members can add a card | Bill pay is promised and needs a card. It's optional for them and required for full members. |
+| Limited access also keeps rewards, privacy, permissions, complaints and alerts | Their data rights can't depend on score. Rewards are earned by paying bills. Everything credit, cover and investing returns 403. |
+| Limited members get no repayment help card | "No credit offers" comes first, and a repayment plan is credit. This is a change from "stressed members get help" for this group; tips are shown instead. **Worth a look.** |
+| A member waiting on the score check can still use the privacy area | Rights apply as soon as a record exists. A test exposed this. |
+| The bank shares the last 6 settled bills plus the open one, and 90 days of purchases; the ladder starts from them | Otherwise a new member starts at Starter (₹50,000) and the ₹1.5L laptop can never reach the Smart Savings prompt. Six in-full bills earn Silver (₹1.5L). |
+| Card entry is last 4 digits (any) plus network, nothing pre-selected, then approval on Mock Bank's page | CRED shouldn't hold a card number. Mirrors the Account Aggregator redirect. |
+| UPI ID comes from Mock Bank at the score check | Every membership includes UPI, with or without a card. |
+| City isn't asked; the screens hide it when empty | Not needed to run a membership. |
+| A closed screen redirects to "not yet" instead of an error | A limited member shouldn't see "Something didn't load". |
+| `PersonaKey` stays for the five personas; new `MemberKey` (`new_<hex>`) is used on sessions and control room endpoints | Sign-ups had to work everywhere without pretending to be personas. |
+| New `GET /gateway/v1/shoppers` for the store's switch; it falls back to the five personas if the API is down | Sign-ups need to reach the laptop. |
+| Sign-up tokens last 30 minutes | Long enough to fill in; an expired one returns to the notice. |
+
+### Deviations
+
+- The flow order differs from the first brief, as the DPDP fixes asked.
+- `Member.age` is required, so sign-ups store it alongside date of birth.
+- "Delete my data" also clears email, date of birth and score. The notice agreement stays in the audit log as the record of consent.
+- The only earlier test files changed are `tests/e2e/helpers.ts` (the scenario helper accepts a member key) and `tests/e2e/setup.ts` (exposes the database folder). No test was weakened.
+
+### Bugs found while building
+
+- **Two bureau enquiries per sign-up.** The check screen's effect fired twice and both requests passed the "only once" check. I saw it in the admin log, not in a test. Now one check runs per member even when requests overlap, with a test for it.
+- **ShopKart crash on Switch** (`926ed0c`) and **stale servers in `pnpm demo`** (`c712db8`), from your earlier reports, ship with this push.
+
+### Known gaps
+
+- **Legal review:** this follows your six DPDP points but hasn't been reviewed by a lawyer. The Hindi was written by me and needs a native speaker's read.
+- **Correction and nomination** are stated in the notice, but there is no dedicated screen. They go through Help and complaints.
+- **Withdrawal is "Delete my data".** There is no separate withdraw step.
+- **No way up from limited yet:** the score isn't rechecked, so a limited member stays limited. Probably part of M8.
+- **Hindi covers the notice only.** The other sign-up screens are in English, and the notice's paths (Profile → Privacy) stay in English because the app does.
+- **Age is self-declared**, as there's nothing to verify it against in the simulation.
+- **Rights text assumes the member can reach Profile.** Someone stopped at under-18 or who abandons has no record to act on.
+- In the browser journey, the new member's laptop purchase goes through the gateway API. ShopKart's own screens are checked only for listing the member; the e2e tests and the persona sweep cover the checkout itself.
+
+### Screenshots (`docs/screenshots/signup/`)
+
+| Screen | File |
+|---|---|
+| Member picker with New member | `signup-01-picker.png` |
+| Welcome | `signup-02-welcome.png` |
+| Notice · itemised · Hindi | `signup-03-notice.png`, `signup-04-notice-itemised.png`, `signup-05-notice-hindi.png` |
+| Phone · code · date of birth | `signup-06-phone.png`, `signup-07-code.png`, `signup-08-dob.png` |
+| Under 18 | `signup-09-under-18.png` |
+| Name and email | `signup-10-details.png` |
+| Gate: full · add card · Mock Bank | `signup-11-gate-full.png`, `signup-12-add-card.png`, `signup-13-mock-bank.png` |
+| New member home · profile · privacy · what CRED knows · notice | `signup-14-home.png` to `signup-18-notice-in-profile.png` |
+| Smart Savings prompt on the laptop | `signup-19-smart-savings-prompt.png` |
+| Not yet · limited home · with card · profile | `signup-20-not-yet.png` to `signup-23-limited-profile.png` |
+| Admin log · members · control room | `signup-25-admin-audit.png`, `signup-26-admin-members.png`, `signup-27-control-room.png` |
+
+---
+
 ## M7 · Follow-ups, ShopKart, partner portals and demo readiness
 
 Tag `m7`. Gate at tag:

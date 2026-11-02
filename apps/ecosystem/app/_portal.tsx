@@ -4,10 +4,10 @@ import { ApiError, DEMO_PERSONAS } from '@cred/types';
 import { useSearchParams } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
 
-/** The person on the page: ?c=per_<persona> (demo), default Aarav. */
+/** The person on the page: ?c=per_<persona>, or per_new_… for someone who signed up (demo), default Aarav. */
 export function useCustomer() {
   const c = useSearchParams().get('c');
-  return DEMO_PERSONAS.some((p) => `per_${p.key}` === c) ? c! : 'per_aarav';
+  return c && /^per_[a-z0-9_]+$/.test(c) ? c : 'per_aarav';
 }
 
 export function usePortal<T>(load: (customerRef: string) => Promise<T>) {

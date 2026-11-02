@@ -1,7 +1,9 @@
 'use client';
 
 import { credApi, formatInr } from '@cred/types';
-import { Avatar, EmptyState, ErrorState, Icon, List, ListRow, LoadingScreen, Money, SectionHeader } from '@cred/ui';
+import { Avatar, Badge, ButtonLink, Card, EmptyState, ErrorState, Icon, List, ListRow, LoadingScreen, Money, SectionHeader } from '@cred/ui';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import { useApi } from '@/lib/live';
 import { firstName, greeting, shortDate } from '@/lib/format';
 import { Screen } from '../_shell/Screen';
@@ -17,12 +19,21 @@ export function Home() {
     home.reload();
     offers.reload();
   };
+  const router = useRouter();
+  const membership = home.data?.membership;
+  const noCard = home.data ? home.data.cards.length === 0 : false;
+  // Sign-up not finished: pick up where the member left off
+  useEffect(() => {
+    if (membership === 'pending') router.replace('/signup/check');
+    else if (membership === 'full' && noCard) router.replace('/signup/card');
+  }, [membership, noCard, router]);
+  const limited = membership === 'limited';
 
   return (
     <Screen tab="home">
       {home.error && !home.data ? (
         <ErrorState message={home.error} onRetry={home.reload} />
-      ) : !home.data ? (
+      ) : !home.data || membership === 'pending' || (membership === 'full' && noCard) ? (
         <LoadingScreen label="Loading your home" />
       ) : (
         <>
@@ -54,9 +65,24 @@ export function Home() {
             </div>
           </header>
 
+          {limited ? (
+            <Card className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-headline">Your membership</h2>
+                <Badge>UPI and bill pay</Badge>
+              </div>
+              <p className="text-callout text-muted">More opens up as your credit score grows. See what helps, and what’s coming.</p>
+              <ButtonLink href="/signup/not-yet" variant="secondary" block>
+                See how to grow your score
+              </ButtonLink>
+            </Card>
+          ) : null}
+
           <section className="flex flex-col gap-3" aria-label="Upcoming bills">
             <SectionHeader title="Upcoming bills" />
-            {home.data.cards.some((c) => c.nextDue) ? (
+            {limited && noCard ? (
+              <EmptyState icon="card" title="Add your card to pay its bills" body="Your bank will ask you to approve it." action={<ButtonLink href="/signup/card">Add your card</ButtonLink>} />
+            ) : home.data.cards.some((c) => c.nextDue) ? (
               home.data.cards.map((c) => <BillCard key={c.id} card={c} today={home.data!.simDate} />)
             ) : (
               <EmptyState icon="card" title="No bills yet" body="Your first statement will show up here." />
@@ -67,7 +93,7 @@ export function Home() {
           {offers.data?.active?.status === 'shown' ? <OfferCard offer={offers.data.active} onDone={reload} /> : null}
           {offers.data?.help.map((h) => <HelpCard key={h.id} help={h} />)}
 
-          <section className="flex flex-col gap-3" aria-label="Your money">
+          {limited ? null : <section className="flex flex-col gap-3" aria-label="Your money">
             <SectionHeader title="Your money" />
             <div className="grid grid-cols-3 gap-3">
               {(
@@ -86,7 +112,7 @@ export function Home() {
                 </a>
               ))}
             </div>
-          </section>
+          </section>}
 
           <section className="flex flex-col gap-3" aria-label="Your cards">
             <SectionHeader title="Your cards" action={<a href="/cards" className="flex min-h-11 items-center text-callout text-accent">See all</a>} />
