@@ -136,6 +136,8 @@ curl -X POST localhost:4000/sim/member-actions -H 'content-type: application/jso
 
 ## Demo script
 
+For the presentation, use the click-by-click guide in [docs/DEMO-GUIDE.md](docs/DEMO-GUIDE.md). Every step there was run in headless Chrome and has screenshots; `node scripts/demo-guide.mjs` reruns it.
+
 Six journeys, about 25 minutes in all, that together show all 8 features, the guardrails and the privacy flow. Before you start:
 
 1. Run `pnpm demo` and wait for `✔ Demo ready`.
