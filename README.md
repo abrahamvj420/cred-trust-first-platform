@@ -132,7 +132,7 @@ curl -X POST localhost:4000/sim/member-actions -H 'content-type: application/jso
 | Priya Nair | Family of five, employer cover plus a floater, parents uncovered, renewal due | 4, 6 |
 | Sneha Kapoor | ₹25L across FDs, funds and gold; saving for a house | 2, 7 |
 | Kabir Singh | Newer member; this month's bill includes a flight he can't clear at once | 3, 5, 8 |
-| Rohan Das | Minimum-only payments; the laptop would take him to ~96% of his limit: gets help, not credit, and can set up a repayment plan | Guardrails |
+| Rohan Das | Minimum-only payments; the laptop would take him to ~96% of his limit: gets help, not credit, and can set up a pay-down plan on his own card (no loan) | Guardrails |
 
 ## Demo script
 
@@ -210,9 +210,9 @@ Continue from journey 3.
 
 **Reset demo**, persona **Rohan** (pays only the minimum, high utilisation).
 
-4. **Control room → ₹1.5L laptop on the card.** CRED shows **no offer**, only a supportive help card ("Talk to us", "See a plan"). **Console → Decisions:** the engine stopped at the stress check, with the reason logged.
-5. Tap **See a plan**. Choose **3, 6 or 12 months**: each shows the monthly amount and the total interest versus carrying it on the card. Pick **6 months**, tick the acknowledgement → **Set up this plan** → OTP → **Confirm my plan**. The plan is created by the partner lender and opens in **Loans**.
-6. **CRED → Credit:** no credit line is shown while he is on the plan, only a link to it. Nothing new is suggested until the plan is done.
+4. **Control room → ₹1.5L laptop on the card.** CRED shows **no offer**, only a supportive help card with **The truth, in rupees**: what the balance costs this month, how long paying only the minimum takes (35 years) and what it costs, against 3, 6 and 12-month plans. **Console → Decisions:** the engine stopped at the stress check, with the reason logged.
+5. Tap **See a plan**. Choose **₹25,730 a month for 12 months**, tick **I'll aim to pay this amount each month…** → **Start my plan**. No lender, no loan, nothing under Loans: he pays his own card's bank through bill pay, and the plan shows under his card. It starts with his next bill.
+6. **Control room → Advance a month.** **CRED → Pay** on his bill → **Your plan amount** → **Pay**: coins earned. **Advance a month** again: the plan shows **On track** and **Credit** shows the bill as **On your plan**, counted towards the ladder. No credit is suggested while he's on the plan. The full click-by-click version is journey 3 in [docs/DEMO-GUIDE.md](docs/DEMO-GUIDE.md).
 
 ### Journey 7 · A new member signs up (notice first · membership gate)
 
@@ -237,4 +237,4 @@ Use made-up details. Control room → **Reset sign-ups** if you've done this bef
 | 3 Sneha, selling | 2 Wealth-Backed Liquidity | Loan-to-value cap; market-fall alert |
 | 4 Sneha, privacy | | Withdraw, what CRED knows, download, delete (loan retained, explained) |
 | 5 Priya, family | 4 Family Health + Wellness, 6 Protection Gap + Claims, 3 Earned Credit Ladder | Right cover, not the most; asks rather than assumes |
-| 6 Kabir and Rohan | 8 Card-Balance Switch | Stressed member gets help, not credit; repayment plan; no new credit while on it |
+| 6 Kabir and Rohan | 8 Card-Balance Switch | Stressed member gets help, not credit; the truth in rupees; a pay-down plan on his own card; no new credit while on it |

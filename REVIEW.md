@@ -4,6 +4,82 @@ One section per milestone from M4 onward: what was built, decisions taken withou
 
 ---
 
+## Pay-down plan · Rohan's plan on his own card, no lender
+
+Replaces the M7 lender-funded repayment plan (Northstar). Rohan pays only the minimum, so a loan would add to the problem. CRED doesn't earn from his card interest, so it can show him the truth and help him clear it.
+
+The brief arrived cut off in point 7 ("Admin: shows 'pay-down plan created' (not a loan), the…"). I took it to mean the admin logs and metrics show the plan, not a loan. Tell me if it said more.
+
+Gate:
+- `pnpm typecheck`: 11 packages.
+- `pnpm test`: unit tests and the boundary checker (200: engine 129, ui 50, types 15, service-kit 6; boundary checker 10 rules).
+- `pnpm test:e2e`: 84 cross-service tests. The M7 lender-plan test was replaced by three pay-down tests.
+- `pnpm screenshots paydown`: Rohan's whole journey in a browser with axe; screenshots in `docs/screenshots/paydown/`.
+- The full persona sweep still passes. Two earlier runs failed only because someone used the demo during them: a ShopKart order for Rohan placed mid-run filled his card. Run undisturbed, it passes.
+- Demo guide journey 3 was rewritten and rerun. It passes from a fresh reset, with screenshots.
+
+### What changed
+
+- **No lender anywhere.** The `repayment_plan` loan kind, the Northstar product, the lender's card payoff for plans, the plan rate rule, the `/v1/repayment-plan` endpoints and the screen are all gone. Starting a plan calls no partner at all; a test checks the partner log is empty.
+- **The truth, in rupees**, on the help card and the plan screen (engine `payDownTruth`):
+  - this month's interest at 3.5% plus GST;
+  - paying only the minimum: how long and the interest (for Rohan's ₹2,40,212: 35 years, ₹9,10,050);
+  - each plan's monthly amount, interest and saving against minimum only. Plan interest is `cardCost`, the savings maths every screen uses.
+- **The plan:** choose 3, 6 or 12 months (nothing pre-selected, acknowledgement unticked) → **Start my plan**.
+  - Payments go through normal bill pay to Mock Bank, his card's bank, with a "Your plan amount" option.
+  - The plan shows under his card as **Pay-down plan**, with progress and one row per bill.
+- **Loyalty:** a bill where he paid at least the plan amount on time settles as **On your plan** and counts like a bill paid in full on the ladder (streak +1). It earns coins like any on-time payment. The screen says: "Stay on track and you'll start unlocking member benefits."
+- **His choice:** paying only the minimum is always fine, and he can stop the plan in one tap. There's one reminder per bill ("the minimum is fine too"), never more, and none for paying the minimum. No credit is suggested while a plan is active (`on_pay_down_plan`) or while the minimum-only pattern shows (unchanged).
+- **Admin:**
+  - the audit log shows `pay_down_plan.created` (with `lender: none`), `.stopped` and `.completed`;
+  - Overview shows **Members on a pay-down plan** and **Pay-down plans on track**;
+  - Members shows each plan's progress.
+
+### Decisions I made on my own
+
+| Decision | Why |
+|---|---|
+| **The plan starts with the next bill**, not the one already due | Rohan has ₹6,200 in the bank and a ₹78,879 bill due in 3 days, so he can't pay a plan amount until his salary arrives. On the current bill he pays what he can; the minimum is fine. |
+| The demo uses **12 months (₹25,730 a month)** | Rohan's salary is ₹48,000. After a month he has about ₹28,700, so 12 months is the only plan he can actually pay. The 3 and 6-month amounts are shown honestly; nothing stops him choosing them. |
+| Plan amount = (balance + plan interest) ÷ months, rounded up to the rupee | One fixed amount is easier to follow than amounts that vary slightly each month. The interest is still `cardCost`. |
+| Minimum-only: 5% of the bill, at least ₹200, no new spending, capped at 100 years | Mock Bank's own minimum-due rule. Assuming no new spending matches the plans, so the comparison is fair. Every figure says "assuming no new spending". |
+| An on-track month counts **like a bill paid in full** on the ladder, so the tier can rise too | You asked that it start his streak and count toward the ladder. A rising tier still unlocks nothing to borrow while he's on the plan. |
+| Plans end when the card is clear or the months are up; one alert either way | A plan shouldn't run forever. If a balance is left, he can start another. |
+| A limited member can see the pay-down page (read only) but can't start a plan | The page loads on Cards for everyone; starting a plan stays within full membership as before. A limited member gets no help card. Worth deciding in M8. |
+| Kept the help card's "See a plan" and its wording; the body now says "a pay-down plan on your own card… with no loan" | Same entry point, honest description. |
+
+### Deviations
+
+- `tests/e2e/m7.e2e.ts`: the repayment-plan test asserted a Northstar loan. That behaviour was removed on purpose, so I replaced the test with three pay-down tests (truth and no lender; bill pay, coins, streak and capped reminders; minimum-only and stop). The other M7 tests are unchanged.
+- `tests/e2e/signup.e2e.ts`: the limited-member check targeted the removed endpoint; it now targets starting a pay-down plan (still refused).
+- The engine unit test file `repayment-plan.test.ts` became `pay-down.test.ts`. The "no new credit while on a plan" and limited-membership cases are kept.
+- The help card's interest line and the truth panel both show this month's interest. It's slightly repetitive, but the body reads on its own.
+
+### Bugs found while building
+
+- **The partner-call log doesn't record the member.** Filtering it by member returned nothing, so my first "no lender was called" check passed without checking anything. The tests now check the whole log after a reset. The log itself is unchanged; recording the member is a small follow-up.
+
+### Known gaps
+
+- Plans assume no new spending. Rohan's everyday card spending in the simulation keeps adding to the balance, so a 12-month plan won't fully clear his card. Progress shows what he has paid against the starting balance.
+- The plan doesn't check affordability against salary. CRED doesn't hold Rohan's income unless he verifies it.
+- Download my data doesn't include pay-down plans yet. Delete removes them.
+- Reminders are in-app alerts only.
+
+### Screenshots (`docs/screenshots/paydown/`)
+
+| Screen | File |
+|---|---|
+| Help card with the truth | `pd-01-help-card-truth.png` |
+| Truth and options · chosen | `pd-02-truth-and-options.png`, `pd-03-chosen.png` |
+| Plan started · under the card | `pd-04-started.png`, `pd-05-card-with-plan.png` |
+| The one reminder · bill pay with the plan amount · paid | `pd-06-reminder.png`, `pd-07-pay-plan-amount.png`, `pd-08-paid.png` |
+| On track · ladder "On your plan" | `pd-09-on-track.png`, `pd-10-ladder.png` |
+| Admin overview · audit | `pd-11-admin-overview.png`, `pd-12-admin-audit.png` |
+| No new credit while on a plan | `pd-13-no-credit-on-plan.png` |
+
+---
+
 ## Sign-up · Notice, membership gate and first card
 
 Built before M8, with the DPDP alignment fixes applied from the start. Commit "Sign-up with notice and membership gate" (no tag was asked for). Gate at commit:

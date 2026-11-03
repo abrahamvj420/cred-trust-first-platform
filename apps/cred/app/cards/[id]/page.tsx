@@ -8,6 +8,7 @@ import { api, errorText } from '@/lib/api';
 import { dateTime, dueLabel, longDate } from '@/lib/format';
 import { useApi } from '@/lib/live';
 import { CardTile } from '../../_components/CardTile';
+import { PlanProgress } from '../../_components/PayDown';
 import { Screen } from '../../_shell/Screen';
 
 type Txn = CardDetail['transactions'][number];
@@ -31,6 +32,7 @@ export default function CardDetailPage() {
 
   const d = detail.data;
   const today = home.data?.simDate;
+  const plan = useApi(credApi.products.payDownPlan).data?.plan;
   return (
     <Screen title="Card" back="/cards">
       {detail.error && !d ? (
@@ -54,6 +56,8 @@ export default function CardDetailPage() {
               </div>
             ))}
           </dl>
+
+          {plan?.status === 'active' && plan.cardId === d.card.id ? <PlanProgress plan={plan} href="/pay-down-plan" /> : null}
 
           {d.statement ? (
             <section className="flex flex-col gap-3">

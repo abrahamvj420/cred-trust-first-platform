@@ -367,7 +367,7 @@ export type KeyFactStatement = z.infer<typeof KeyFactStatement>;
 
 export const HelpPlan = z.object({
   id: Id,
-  kind: z.enum(['repayment_plan', 'spend_alerts', 'talk_to_us']),
+  kind: z.enum(['pay_down_plan', 'spend_alerts', 'talk_to_us']),
   title: z.string(),
   body: z.string(),
   monthlyInterestPaise: NonNegativePaise.nullable(),
@@ -438,7 +438,7 @@ export const LadderStatus = z.object({
     z.object({
       periodEnd: IsoDate,
       dueDate: IsoDate,
-      outcome: z.enum(['paid_in_full', 'part_paid', 'missed', 'open']),
+      outcome: z.enum(['paid_in_full', 'on_plan', 'part_paid', 'missed', 'open']),
       counted: z.boolean(),
     }),
   ),
@@ -679,28 +679,59 @@ export const PrepaymentQuote = z.object({
 });
 export type PrepaymentQuote = z.infer<typeof PrepaymentQuote>;
 
-/** A plan to clear a carried card balance: help, not new credit. */
-export const RepaymentPlanOption = z.object({
+/** A pay-down plan option: a fixed amount to the member's own card bank each month. No lender, no new credit. */
+export const PayDownOption = z.object({
   months: z.union([z.literal(3), z.literal(6), z.literal(12)]),
   monthlyPaise: PositivePaise,
+  /** Card interest (with GST) still paid along the way. */
   totalInterestPaise: NonNegativePaise,
-  ratePaBps: Bps,
-  /** Interest if the same balance stayed on the card and was paid off over the same months. */
-  cardInterestPaise: NonNegativePaise,
+  /** Interest saved against paying only the minimum. */
   savingPaise: Paise,
 });
-export type RepaymentPlanOption = z.infer<typeof RepaymentPlanOption>;
+export type PayDownOption = z.infer<typeof PayDownOption>;
 
-export const RepaymentPlanView = z.object({
-  eligible: z.boolean(),
-  /** Why not (supportive), when not eligible. */
-  note: z.string(),
+/** The truth about a carried balance, in rupees, assuming no new spending on the card. */
+export const PayDownTruth = z.object({
   balancePaise: NonNegativePaise,
-  lenderName: z.string(),
-  options: z.array(RepaymentPlanOption),
-  activeLoanId: Id.nullable(),
+  /** What the balance costs this month: 3.5% plus GST. */
+  monthlyInterestPaise: NonNegativePaise,
+  minimumOnly: z.object({ months: z.number().int().nonnegative(), totalInterestPaise: NonNegativePaise, firstMinimumPaise: NonNegativePaise }),
+  plans: z.array(PayDownOption),
 });
-export type RepaymentPlanView = z.infer<typeof RepaymentPlanView>;
+export type PayDownTruth = z.infer<typeof PayDownTruth>;
+
+export const PayDownPlan = z.object({
+  id: Id,
+  cardId: Id,
+  cardLabel: z.string(),
+  months: z.number().int(),
+  monthlyPaise: PositivePaise,
+  startBalancePaise: NonNegativePaise,
+  totalInterestPaise: NonNegativePaise,
+  savingPaise: Paise,
+  startedOn: IsoDate,
+  status: z.enum(['active', 'completed', 'stopped']),
+  /** Paid towards the card since the plan started (any payment counts). */
+  paidSoFarPaise: NonNegativePaise,
+  /** One row per bill since the plan started. */
+  cycles: z.array(z.object({ dueDate: IsoDate, planAmountPaise: NonNegativePaise, paidPaise: NonNegativePaise, state: z.enum(['on_track', 'below_plan', 'open']) })),
+  onTrackCycles: z.number().int().nonnegative(),
+  /** Still to pay on the open bill to stay on track (0 when done for this bill). */
+  nextAmountPaise: NonNegativePaise,
+  nextDueDate: IsoDate.nullable(),
+});
+export type PayDownPlan = z.infer<typeof PayDownPlan>;
+
+export const PayDownView = z.object({
+  eligible: z.boolean(),
+  /** Supportive note: why not, or what this is. */
+  note: z.string(),
+  truth: PayDownTruth.nullable(),
+  plan: PayDownPlan.nullable(),
+  /** The path the plan opens: streak, next tier and coins. */
+  ladder: z.object({ onTimeStreak: z.number().int(), nextTier: z.string().nullable(), paymentsNeeded: z.number().int().nullable(), coinsPer100: z.number().int() }),
+});
+export type PayDownView = z.infer<typeof PayDownView>;
 
 // ── Complaints ────────────────────────────────────────────────────────────────
 

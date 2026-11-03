@@ -6,7 +6,7 @@ import {
   Claim,
   Complaint,
   PrepaymentQuote,
-  RepaymentPlanView,
+  PayDownView,
   Vehicle,
   FamilyMember,
   FloaterComparison,
@@ -195,29 +195,27 @@ export const productEndpoints = {
     params: z.object({ loanId: Id }),
     response: z.object({ amountPaise: PositivePaise, status: z.literal('requested') }),
   }),
-  repaymentPlan: endpoint({
+  payDownPlan: endpoint({
     method: 'GET',
-    path: '/v1/repayment-plan',
+    path: '/v1/pay-down-plan',
     auth: 'member',
-    summary: 'Plans to clear a carried card balance over 3, 6 or 12 months, vs carrying it',
-    response: RepaymentPlanView,
+    summary: 'The truth about a carried balance, pay-down options on the member’s own card, and any plan in progress',
+    response: PayDownView,
   }),
-  startRepaymentPlan: endpoint({
+  startPayDownPlan: endpoint({
     method: 'POST',
-    path: '/v1/repayment-plan',
+    path: '/v1/pay-down-plan',
     auth: 'member',
-    summary: 'Choose a plan; the partner sends an OTP to confirm',
-    body: z.object({ months: z.union([z.literal(3), z.literal(6), z.literal(12)]), termsAcknowledged: z.literal(true) }),
-    response: z.object({ loanId: Id, otp: z.object({ sentTo: z.string(), demoOtp: z.string() }) }),
+    summary: 'Start a pay-down plan (no lender: the member pays their own card bank through bill pay)',
+    body: z.object({ months: z.union([z.literal(3), z.literal(6), z.literal(12)]), acknowledged: z.literal(true) }),
+    response: PayDownView,
   }),
-  confirmRepaymentPlan: endpoint({
+  stopPayDownPlan: endpoint({
     method: 'POST',
-    path: '/v1/repayment-plan/:loanId/confirm',
+    path: '/v1/pay-down-plan/stop',
     auth: 'member',
-    summary: 'Confirm with the OTP; the partner clears the card and the plan appears in Loans',
-    params: z.object({ loanId: Id }),
-    body: z.object({ otp: z.string().regex(/^\d{6}$/) }),
-    response: z.object({ loanId: Id, status: z.literal('requested') }),
+    summary: 'Stop the plan; the member’s choice, no questions',
+    response: PayDownView,
   }),
 
   // ── Wealth (features 2, 7) ──

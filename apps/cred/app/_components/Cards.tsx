@@ -4,6 +4,8 @@ import { credApi, type HelpPlan, type Offer } from '@cred/types';
 import { Button, ButtonLink, Card, Icon, Money, Notice } from '@cred/ui';
 import { useState } from 'react';
 import { api, errorText } from '@/lib/api';
+import { useApi } from '@/lib/live';
+import { Truth } from './PayDown';
 
 /** "Why am I seeing this?" — every offer carries its plain-English reason. */
 export function Why({ text, label = 'Why am I seeing this?' }: { text: string; label?: string }) {
@@ -91,6 +93,7 @@ export function OfferCard({ offer, onDone }: { offer: Offer; onDone: () => void 
 }
 
 export function HelpCard({ help }: { help: HelpPlan }) {
+  const truth = useApi(credApi.products.payDownPlan, undefined, { live: false }).data?.truth;
   return (
     <Card elevation={2} className="flex animate-enter flex-col gap-3 border-warning/40">
       <p className="flex items-center gap-2 text-overline uppercase text-warning">
@@ -98,11 +101,17 @@ export function HelpCard({ help }: { help: HelpPlan }) {
       </p>
       <h2 className="text-headline">{help.title}</h2>
       <p className="text-callout text-muted">{help.body}</p>
+      {truth ? (
+        <div className="rounded-md border border-border bg-raised p-3">
+          <p className="mb-2 text-overline uppercase text-muted">The truth, in rupees</p>
+          <Truth truth={truth} compact />
+        </div>
+      ) : null}
       <div className="grid grid-cols-2 gap-3">
         <ButtonLink href="/help" variant="secondary">
           Talk to us
         </ButtonLink>
-        <ButtonLink href="/repayment-plan">See a plan</ButtonLink>
+        <ButtonLink href="/pay-down-plan">See a plan</ButtonLink>
       </div>
     </Card>
   );

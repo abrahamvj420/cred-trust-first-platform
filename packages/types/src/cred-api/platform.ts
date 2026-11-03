@@ -93,6 +93,7 @@ export const privacyEndpoints = {
 const AdminMemberRow = Member.extend({
   membership: Membership,
   creditScore: z.number().int().nullable(),
+  payDownPlan: z.object({ months: z.number().int(), onTrackCycles: z.number().int(), paidSoFarPaise: z.number().int(), startBalancePaise: z.number().int() }).nullable(),
   smartSavings: z.boolean(),
   stressed: z.boolean(),
   offersThisMonth: z.number().int().nonnegative(),
@@ -152,7 +153,8 @@ export const AdminOverview = z.object({
     defaultRateBps: z.number().int(),
     cardBillsMissed: z.number().int(),
     bouncesThisMonth: z.number().int(),
-    membersOnRepaymentPlans: z.number().int(),
+    membersOnPayDownPlans: z.number().int(),
+    payDownPlansOnTrack: z.number().int(),
     membersShowingStrain: z.number().int(),
   }),
 });

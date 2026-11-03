@@ -1,10 +1,11 @@
-import { billOutcome, ladderAfter, tierForStreak, tierLabel } from '@cred/engine';
+import { billOutcome, ladderAfter, prettyDate, tierForStreak, tierLabel } from '@cred/engine';
 import { CreditTier, formatBps, formatInr, type WebhookEvent, type WebhookEventOf } from '@cred/types';
 import { onConsentUpdated, refreshFromAa } from './aa';
 import { dataUpdated, raiseAlert } from './alerts';
 import type { Ctx } from './context';
 import { recordLadderChange, runBigSpend, runProtectionGap } from './engine-runner';
 import { shareWellnessScore } from './wellness';
+import { activePlan, planAmountFor, planReminder } from './paydown';
 import { toClaim, toLoan, toTxn } from './mappers';
 
 const isUniqueViolation = (e: unknown) => typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002';
@@ -195,6 +196,10 @@ async function onStatement(ctx: Ctx, event: WebhookEventOf<'bank.card.statement.
       }),
       db.card.update({ where: { id: card.id }, data: { outstandingPaise: d.outstandingPaise } }),
     ]);
+    const plan = await activePlan(db, card.memberId);
+    if (plan && plan.cardId === card.id) {
+      await raiseAlert(ctx, card.memberId, planReminder(plan, d.totalDuePaise, d.dueDate, prettyDate(d.dueDate)));
+    }
     await ctx.audit({ memberId: card.memberId, actor: 'partner', action: 'statement.generated', target: d.statementRef, details: { totalDuePaise: d.totalDuePaise, dueDate: d.dueDate, interestPaise: d.interestPaise } });
   }
   dataUpdated(ctx, card.memberId, 'cards');
@@ -231,7 +236,10 @@ async function applyDueDates(ctx: Ctx, today: string): Promise<void> {
   const { db } = ctx;
   const due = await db.statement.findMany({ where: { settledOn: null, dueDate: { lt: today } }, include: { payments: true, card: true }, orderBy: { dueDate: 'asc' } });
   for (const s of due) {
-    const outcome = billOutcome({ totalDuePaise: s.totalDuePaise, minDuePaise: s.minDuePaise, paidPaise: s.paidPaise, allOnTime: s.payments.every((p) => p.onTime) });
+    // On a pay-down plan, paying at least the plan amount on time keeps the streak going
+    const plan = await activePlan(db, s.card.memberId);
+    const planDue = plan && plan.cardId === s.cardId && s.periodEnd >= plan.startedOn ? planAmountFor(plan, s.totalDuePaise) : null;
+    const outcome = billOutcome({ totalDuePaise: s.totalDuePaise, minDuePaise: s.minDuePaise, paidPaise: s.paidPaise, allOnTime: s.payments.every((p) => p.onTime) }, planDue);
     const status = s.paidPaise >= s.totalDuePaise ? 'paid' : s.paidPaise >= s.minDuePaise ? 'partial' : 'overdue';
     await db.statement.update({ where: { id: s.id }, data: { settledOn: today, ladderOutcome: outcome, status } });
     const memberId = s.card.memberId;
@@ -245,7 +253,27 @@ async function applyDueDates(ctx: Ctx, today: string): Promise<void> {
       await raiseAlert(ctx, memberId, { kind: 'ladder', title: `${tierLabel(step.tier)} unlocked`, body: r.decision.explanation, href: '/credit', sourceRef: `ladder:${s.externalRef}` });
     }
     dataUpdated(ctx, memberId, 'ladder');
+    if (plan) await finishPlanIfDone(ctx, plan.id, today);
   }
+}
+
+/** A plan ends when the card is clear, or when its months are up (the member can start another). */
+async function finishPlanIfDone(ctx: Ctx, planId: string, today: string): Promise<void> {
+  const { db } = ctx;
+  const plan = await db.payDownPlan.findUnique({ where: { id: planId } });
+  if (!plan || plan.status !== 'active') return;
+  const card = await db.card.findUniqueOrThrow({ where: { id: plan.cardId } });
+  const settled = await db.statement.count({ where: { cardId: plan.cardId, periodEnd: { gte: plan.startedOn }, settledOn: { not: null } } });
+  if (card.outstandingPaise > 0 && settled < plan.months) return;
+  await db.payDownPlan.update({ where: { id: plan.id }, data: { status: 'completed', endedOn: today } });
+  await ctx.audit({ memberId: plan.memberId, actor: 'system', action: 'pay_down_plan.completed', target: plan.id, details: { cardClear: card.outstandingPaise <= 0 } });
+  await raiseAlert(ctx, plan.memberId, {
+    kind: 'plan',
+    title: card.outstandingPaise <= 0 ? 'Your card is clear' : 'Your pay-down plan has finished',
+    body: card.outstandingPaise <= 0 ? 'You did it: nothing is carrying interest now. Paying each bill in full keeps it that way.' : `There’s ${formatInr(card.outstandingPaise)} still on the card. If you’d like, start another plan from your card.`,
+    href: '/pay-down-plan',
+    sourceRef: `plan_done:${plan.id}`,
+  });
 }
 
 async function onLoanDecided(ctx: Ctx, event: WebhookEventOf<'lender.loan.decided'>): Promise<string | null> {

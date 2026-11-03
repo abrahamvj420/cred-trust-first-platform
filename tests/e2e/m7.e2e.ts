@@ -1,7 +1,8 @@
 /**
- * M7: repayment plans (help, not credit), EMI bounces and recovery, the staff
+ * M7: pay-down plans on the member's own card (help, not credit), EMI bounces and recovery, the staff
  * login for the console, ShopKart's UPI checkout and the lender portal.
  */
+import { payDownTruth } from '@cred/engine';
 import { call, credApi, ecosystemApi, personaByKey } from '@cred/types';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { advance, buyOnShopKart, cred, eco, eventually, login, resetWorld, scenario, settle, STAFF } from './helpers';
@@ -23,39 +24,102 @@ async function aaravWithEmi() {
   return { token, loan: (await cred(credApi.products.loans, { token })).loans[0]! };
 }
 
-describe('Repayment plan (Rohan’s help card)', () => {
-  it('3, 6 or 12 months vs carrying it; created through the partner; tracked in Loans; no new credit while on it', async () => {
+describe('Pay-down plan on his own card (Rohan’s help card, no lender)', () => {
+  it('shows the truth in rupees; the plan is his own card, not a loan; no lender is called', async () => {
     const token = await login('rohan');
-    const view = await cred(credApi.products.repaymentPlan, { token });
+    const card = (await cred(credApi.member.cards, { token })).cards[0]!;
+    const view = await cred(credApi.products.payDownPlan, { token });
     expect(view.eligible).toBe(true);
-    expect(view.options.map((o) => o.months)).toEqual([3, 6, 12]);
-    for (const o of view.options) {
-      expect(o.savingPaise).toBe(o.cardInterestPaise - o.totalInterestPaise);
-      expect(o.savingPaise).toBeGreaterThan(0);
+    // The same savings maths as the engine everywhere else
+    expect(view.truth).toEqual(payDownTruth(card.outstandingPaise));
+    expect(view.truth!.monthlyInterestPaise).toBe(Math.round(card.outstandingPaise * 0.035 * 1.18));
+    expect(view.truth!.plans.map((p) => p.months)).toEqual([3, 6, 12]);
+    for (const p of view.truth!.plans) {
+      expect(p.savingPaise).toBe(view.truth!.minimumOnly.totalInterestPaise - p.totalInterestPaise);
+      expect(p.savingPaise).toBeGreaterThan(0);
     }
-    const start = await cred(credApi.products.startRepaymentPlan, { token, body: { months: 6, termsAcknowledged: true } });
-    await cred(credApi.products.confirmRepaymentPlan, { token, params: { loanId: start.loanId }, body: { otp: start.otp.demoOtp } });
-    await settle();
-    const plan = (await cred(credApi.products.loan, { token, params: { loanId: start.loanId } })).loan;
-    expect(plan).toMatchObject({ kind: 'repayment_plan', status: 'disbursed', ratePaBps: 1200, tenureMonths: 6, principalPaise: view.balancePaise });
-    expect(plan.emiPaise).toBe(view.options[1]!.monthlyPaise);
-    // The partner cleared the card
-    expect((await cred(credApi.member.cards, { token })).cards[0]!.outstandingPaise).toBe(0);
-    expect((await cred(credApi.products.repaymentPlan, { token })).activeLoanId).toBe(start.loanId);
+    expect(view.truth!.minimumOnly.months).toBeGreaterThan(view.truth!.plans[2]!.months);
 
-    // No new credit while on it: a big purchase is not turned into an offer, whoever asks
-    await buyOnShopKart('rohan', 60_000_00, 'Studio 27 4K Monitor');
+    // An unticked acknowledgement can't start it
+    await expect(cred(credApi.products.startPayDownPlan, { token, body: { months: 12, acknowledged: false as true } })).rejects.toMatchObject({ status: 400 });
+    const started = await cred(credApi.products.startPayDownPlan, { token, body: { months: 12, acknowledged: true } });
+    const plan = started.plan!;
+    expect(plan).toMatchObject({ status: 'active', months: 12, monthlyPaise: view.truth!.plans[2]!.monthlyPaise, startBalancePaise: card.outstandingPaise, cycles: [] });
+    await settle();
+
+    // No lender, no loan, the card untouched
+    expect((await cred(credApi.products.loans, { token })).loans).toEqual([]);
+    const memberId = await me(token);
+    // The world was reset for this test: starting the plan called no partner at all (the next test shows the log does record calls)
+    expect((await cred(credApi.admin.partnerCalls, { query: { limit: 200 } })).calls).toEqual([]);
+    expect((await cred(credApi.member.cards, { token })).cards[0]!.outstandingPaise).toBe(card.outstandingPaise);
+    const audit = (await cred(credApi.admin.audit, { query: { memberId, limit: 20 } })).entries.find((e) => e.action === 'pay_down_plan.created');
+    expect(audit?.details).toMatchObject({ months: 12, lender: 'none' });
+    expect((await cred(credApi.admin.overview)).defaults.membersOnPayDownPlans).toBe(1);
+    expect((await cred(credApi.admin.members)).members.find((m) => m.id === memberId)?.payDownPlan).toMatchObject({ months: 12 });
+
+    // No new credit while on it, whoever asks
+    await buyOnShopKart('rohan', 38_500_00, 'Studio 27 4K Monitor');
     const [d] = await eventually(async () => {
-      const x = (await cred(credApi.admin.decisions, { query: { memberId: await me(token) } })).decisions.filter((y) => y.feature === 'big_spend_support');
+      const x = (await cred(credApi.admin.decisions, { query: { memberId } })).decisions.filter((y) => y.feature === 'big_spend_support');
       return x.length ? x : null;
     }, 'decision');
-    expect(d).toMatchObject({ outcome: 'blocked', reasons: ['on_repayment_plan'] });
-    expect(d!.explanation).toMatch(/You’re on a repayment plan/);
+    expect(d).toMatchObject({ outcome: 'blocked', reasons: ['on_pay_down_plan'] });
+    expect(d!.explanation).toMatch(/You’re on a pay-down plan/);
     expect((await cred(credApi.member.creditLadder, { token })).creditLine.shown).toBe(false);
-    expect((await cred(credApi.admin.overview)).defaults.membersOnRepaymentPlans).toBe(1);
+    await expect(cred(credApi.products.startPayDownPlan, { token, body: { months: 3, acknowledged: true } })).rejects.toMatchObject({ status: 409 });
+  });
 
-    // Blocked: a second plan
-    await expect(cred(credApi.products.startRepaymentPlan, { token, body: { months: 3, termsAcknowledged: true } })).rejects.toMatchObject({ status: 409 });
+  it('plan payments go through bill pay to his card bank, earn coins and start his streak; one gentle reminder per bill', async () => {
+    const token = await login('rohan');
+    const streakBefore = (await cred(credApi.member.creditLadder, { token })).onTimeStreak;
+    await cred(credApi.products.startPayDownPlan, { token, body: { months: 12, acknowledged: true } });
+    // The bill already due is paid as he can (his own habit pays the minimum); the plan starts with the next bill
+    await advance(1);
+    let v = (await cred(credApi.products.payDownPlan, { token })).plan!;
+    expect(v.cycles).toHaveLength(1);
+    expect(v.cycles[0]!.state).toBe('open');
+    expect(v.nextAmountPaise).toBe(Math.min(v.monthlyPaise, v.cycles[0]!.planAmountPaise));
+    const reminders = (await cred(credApi.products.alerts, { token })).alerts.filter((a) => a.kind === 'plan');
+    expect(reminders).toHaveLength(1);
+    expect(reminders[0]!.body).toMatch(/the minimum is fine too/);
+    expect(JSON.stringify(reminders)).not.toMatch(/stress|risk|blocked/i);
+
+    // He pays the plan amount through the normal bill pay: to Mock Bank, his card's bank
+    const card = (await cred(credApi.member.cards, { token })).cards[0]!;
+    const paid = await cred(credApi.member.payBill, { token, params: { cardId: card.id }, body: { kind: 'custom', amountPaise: v.nextAmountPaise, source: 'upi' } });
+    expect(paid.coinsEarned).toBeGreaterThan(0);
+    const calls = (await cred(credApi.admin.partnerCalls, { query: { limit: 200 } })).calls;
+    expect(calls.some((c) => c.partner === 'bank' && c.path.includes('card-bill-payments'))).toBe(true);
+    expect(calls.filter((c) => c.partner === 'lender')).toEqual([]);
+    v = (await cred(credApi.products.payDownPlan, { token })).plan!;
+    expect(v.nextAmountPaise).toBe(0);
+
+    // The due date passes: on track, and the ladder counts it like a bill paid in full
+    await advance(1);
+    v = (await cred(credApi.products.payDownPlan, { token })).plan!;
+    expect(v.cycles[0]!.state).toBe('on_track');
+    expect(v.onTrackCycles).toBe(1);
+    const ladder = await cred(credApi.member.creditLadder, { token });
+    expect(ladder.onTimeStreak).toBe(streakBefore + 1);
+    expect(ladder.history.some((h) => h.outcome === 'on_plan')).toBe(true);
+    // Still one reminder per bill, never more
+    expect((await cred(credApi.products.alerts, { token })).alerts.filter((a) => a.kind === 'plan')).toHaveLength(2);
+  });
+
+  it('paying only the minimum stays his choice: no extra nudges, and he can stop the plan', async () => {
+    const token = await login('rohan');
+    await cred(credApi.products.startPayDownPlan, { token, body: { months: 6, acknowledged: true } });
+    await advance(2); // his habit pays the minimum both months
+    const v = (await cred(credApi.products.payDownPlan, { token })).plan!;
+    expect(v.cycles[0]!.state).toBe('below_plan');
+    expect((await cred(credApi.products.alerts, { token })).alerts.filter((a) => a.kind === 'plan')).toHaveLength(2);
+    const stopped = await cred(credApi.products.stopPayDownPlan, { token });
+    expect(stopped.plan).toBeNull();
+    expect(stopped.eligible).toBe(true);
+    const memberId = await me(token);
+    expect((await cred(credApi.admin.audit, { query: { memberId, limit: 30 } })).entries.some((e) => e.action === 'pay_down_plan.stopped')).toBe(true);
+    expect((await cred(credApi.admin.overview)).defaults.membersOnPayDownPlans).toBe(0);
   });
 });
 

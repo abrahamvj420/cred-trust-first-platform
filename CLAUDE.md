@@ -224,7 +224,7 @@ Every screen: loading, empty and error states; AA contrast; 44px tap targets; la
 
 ## Conventions added in M7
 
-- **Repayment plan:** offered only from the help card (member-initiated, never a proactive offer). `GET /v1/repayment-plan` returns 3, 6 and 12-month options from `repaymentPlanOptions` (engine, plan rate `planRatePaBps` 12% p.a., no fee, reducing balance) against carrying the balance on the card; balances under `planMinBalancePaise` (₹5,000) aren't offered one. Start (unticked acknowledgement) → partner (Northstar, `LoanKind` `repayment_plan`) → e-sign OTP → disbursal clears the card's carried balance → tracked in Loans. While a plan is open the snapshot has `onRepaymentPlan`; the stress check stops every feature with `on_repayment_plan`, and the credit line is hidden.
+- **Pay-down plan (replaced the M7 lender repayment plan):** help for a member carrying a balance, on their own card. **No lender, no loan, nothing under Loans.** CRED doesn't earn from card interest, so it shows the truth: `GET /v1/pay-down-plan` returns `payDownTruth` (engine `features/pay-down.ts`): this month's interest at 3.5% + GST, the minimum-only path (`minimumOnlyPath`: the bank's 5%, at least ₹200, no new spending) and 3/6/12-month plans whose interest is `cardCost`, the same savings maths as everywhere. Start = choose months + unticked acknowledgement (`PayDownPlan` row, audit `pay_down_plan.created`, `lender: 'none'`). The plan starts with the next bill to close; the member pays the plan amount to their card bank through normal bill pay ("Your plan amount" option, never pre-selected). A bill where they paid at least the plan amount on time settles as `on_plan`, which counts like `paid_in_full` on the ladder (streak +1); coins as for any on-time payment. One gentle reminder per bill (`plan` alert), nothing more; paying only the minimum or stopping (`/v1/pay-down-plan/stop`) is their choice. While a plan is active, the stress check stops every feature with `on_pay_down_plan` and the credit line is hidden. The plan ends when the card is clear or its months are up. Admin: Overview "Members on a pay-down plan" and "Pay-down plans on track", Members shows plan progress.
 - **EMI bounce:** the `cash_crunch` scenario (control room → Guardrails) drains the persona's bank account to ₹1,000 and holds next month's salary 10 days (`salaryDelayDays`, negative while held). The next collection bounces (`lender.emi.bounced`) → a calm member alert and an Overdue banner on the loan with **Pay now** (`/v1/loans/:loanId/pay-overdue`, refused kindly if the account is still short) and **Talk to us**. Admin Overview: "EMIs bounced in the last month", funnel "Now overdue", "Members on a repayment plan". Late collections are marked `paid`.
 - **Console login:** staff accounts in `StaffUser` (scrypt hash). Seeded `ops@cred.example` / `trust-first-demo` (Ananya Rao, `DEMO_STAFF` in `packages/db/src/seed/staff.ts`, printed in README). `POST /admin/v1/login` issues an `stf.`-prefixed token signed over `staff.<payload>`; member tokens never pass `auth: 'admin'`. The console keeps it in localStorage and sends it as Bearer (SSE: `?token=`). Logins and failures are audited; rule and complaint audits name the staff member.
 - **`pnpm demo`** (`scripts/demo.mjs`) is the documented way to start a demo: frees ports 3000–3003/4000/4100 (stops leftover servers from this repo; refuses if another program holds one, since a stale server would answer green), clears the apps' `.next`, runs `pnpm seed`, starts `pnpm dev` with `LOG_LEVEL=warn` and `DEMO_MODE=true` (output to `logs/demo.log`, git-ignored), waits for all six `/status` endpoints, warms the pages and prints URLs and the console login.
@@ -278,6 +278,21 @@ DPDP alignment fixes:
 5. State what withdrawal means: membership ends, but existing loans and policies with partners continue.
 6. Name the credit score check explicitly in the summary: "We'll check your credit score with a credit bureau to confirm eligibility."
 Add tests: no member data stored before agreement; under-18 stopped with nothing stored.
+
+## Pay-down plan brief (as given; the message arrived cut off in point 7)
+
+Fix Rohan's journey: replace the lender-funded repayment plan with a pay-down plan on his own card. No lender is involved.
+
+Why: Rohan pays only the minimum. A loan would add to his problem. CRED doesn't earn from his card interest (his bank does), so CRED can show him the truth and help him get out of debt. That builds trust and keeps him as a loyal member who becomes valuable later.
+
+Changes:
+1. Remove Northstar Finance (or any lender) from Rohan's plan entirely: no lender call, no disbursal, no new loan record, nothing under Loans.
+2. "The truth" panel on his help card, all in rupees: what his balance costs him each month in interest at his card's rate (3.5% a month + GST); if he keeps paying only the minimum: how long until he's debt-free and the total interest he'll pay; if he follows a plan instead: the same two numbers for 3, 6 and 12 months. Use the engine's existing savings maths so the numbers match everywhere.
+3. Pay-down plan: Rohan picks 3, 6 or 12 months. CRED shows the monthly amount to pay his OWN card bank, the interest still paid along the way and the saving versus minimum-only. Payments go through the normal bill pay flow to his card bank. Show the plan under his card as "Pay-down plan" with progress, not as a loan.
+4. Loyalty: on-time plan payments earn CRED coins and start his on-time streak, which counts toward the Earned Credit Ladder. Show him that path: "Stay on track and you'll start unlocking member benefits."
+5. His choice: he can still pay only the minimum. No nagging; reminders gentle and capped. No credit offers while he's in the minimum-only pattern (unchanged).
+6. Wording stays supportive; no banned words.
+7. Admin: shows "pay-down plan created" (not a loan), the … (cut off)
 
 ## M7 brief (as given)
 

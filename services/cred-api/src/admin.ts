@@ -6,6 +6,7 @@ import { issueStaffToken } from './session';
 import type { Ctx } from './context';
 import { toAudit, toComplaint, toDecision, toLoan, toTxn } from './mappers';
 import { activeRules, loadRules } from './rules';
+import { activePlan, planView } from './paydown';
 import { ACTIVE_OFFER_STATUSES, buildSnapshot } from './snapshot';
 
 /** CRED internal console: ops, funnel, risk, privacy and rule settings. */
@@ -46,6 +47,12 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
           vpa: m.vpa,
           membership: Membership.parse(m.membership),
           creditScore: m.creditScore,
+          payDownPlan: await (async () => {
+            const p = await activePlan(db, m.id);
+            if (!p) return null;
+            const v = await planView(db, p);
+            return { months: v.months, onTrackCycles: v.onTrackCycles, paidSoFarPaise: v.paidSoFarPaise, startBalancePaise: v.startBalancePaise };
+          })(),
           smartSavings: m.permissions.some((p) => p.scope === 'smart_savings' && p.status === 'granted'),
           stressed: stressSignals(await buildSnapshot(ctx, m.id), activeRules()).length > 0,
           offersThisMonth: m.offers.filter((o) => o.simDate.startsWith(month)).length,
@@ -136,6 +143,7 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       db.complaint.count({ where: { status: 'open' } }),
       db.insurancePolicy.aggregate({ _sum: { wellnessSavedPaise: true }, _count: { wellnessSavedPaise: true }, where: { wellnessSavedPaise: { gt: 0 } } }),
     ]);
+    const plans = await db.payDownPlan.findMany({ where: { status: 'active', member: { deletedAt: null } } });
     const overdueOffers = new Set(loans.filter((l) => l.offerId && l.installments.some((i) => i.status === 'overdue')).map((l) => l.offerId!));
     const funnel = FeatureKey.options.map((feature) => {
       const ds = decisions.filter((d) => d.feature === feature);
@@ -201,7 +209,8 @@ export function adminHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         defaultRateBps: loans.length ? Math.round((over90.size * 10_000) / loans.length) : 0,
         cardBillsMissed: statementsMissed,
         bouncesThisMonth: (await db.auditLog.findMany({ where: { action: 'loan.emi_bounced' } })).filter((a) => daysPast((JSON.parse(a.detailsJson) as { simDate?: string }).simDate ?? today) <= 31).length,
-        membersOnRepaymentPlans: new Set(loans.filter((l) => l.kind === 'repayment_plan' && l.status === 'disbursed').map((l) => l.memberId)).size,
+        membersOnPayDownPlans: plans.length,
+        payDownPlansOnTrack: (await Promise.all(plans.map((p) => planView(db, p)))).filter((v) => !v.cycles.some((c) => c.state === 'below_plan')).length,
         membersShowingStrain: strained,
       },
     };

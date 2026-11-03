@@ -9,7 +9,8 @@ import type { MemberSnapshot } from '../snapshot';
  * Earned Credit Ladder (feature 3). Tiers unlock with consecutive bills paid
  * in full by the due date. Limits are shown as available, never pushed.
  */
-export type BillOutcome = 'paid_in_full' | 'part_paid' | 'missed';
+/** on_plan: a member on a pay-down plan paid at least the plan amount, on time. It counts like a bill paid in full. */
+export type BillOutcome = 'paid_in_full' | 'on_plan' | 'part_paid' | 'missed';
 
 export interface SettledBill {
   totalDuePaise: number;
@@ -20,8 +21,9 @@ export interface SettledBill {
 }
 
 /** What a bill counts as once its due date has passed. */
-export function billOutcome(b: SettledBill): BillOutcome {
+export function billOutcome(b: SettledBill, planDuePaise: number | null = null): BillOutcome {
   if (b.paidPaise >= b.totalDuePaise && b.allOnTime) return 'paid_in_full';
+  if (planDuePaise !== null && b.paidPaise >= Math.min(planDuePaise, b.totalDuePaise) && b.allOnTime) return 'on_plan';
   if (b.paidPaise >= b.minDuePaise && b.allOnTime) return 'part_paid';
   return 'missed';
 }
@@ -50,7 +52,7 @@ export interface LadderStep extends LadderPosition {
  * - missed (below the minimum, or late): streak back to 0, down one tier.
  */
 export function ladderAfter(prev: LadderPosition, outcome: BillOutcome): LadderStep {
-  if (outcome === 'paid_in_full') {
+  if (outcome === 'paid_in_full' || outcome === 'on_plan') {
     const onTimeStreak = prev.onTimeStreak + 1;
     const earned = tierForStreak(onTimeStreak).tier as CreditTier;
     const tier = rank(earned) > rank(prev.tier) ? earned : prev.tier;

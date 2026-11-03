@@ -22,8 +22,6 @@ const PRODUCTS: Record<LoanKind, { lender: string; rateOffsetBps: number; feeBps
   loan_against_funds: { lender: 'lnd_keystone', rateOffsetBps: 0 },
   // Card-Balance Switch: starts 1% above Northstar's base, steps down 1% after 2 and 4 on-time EMIs
   balance_switch_emi: { lender: 'lnd_northstar', rateOffsetBps: 100, stepDown: [{ afterOnTimePayments: 2, offsetBps: 0 }, { afterOnTimePayments: 4, offsetBps: -100 }] },
-  // Hardship repayment plan: clears a carried card balance; 4% below base, no fee
-  repayment_plan: { lender: 'lnd_northstar', rateOffsetBps: -400, feeBps: 0 },
 };
 const VERIFIED_DISCOUNT_BPS = 100;
 /** The lender's own loan-to-value limits; CRED's are stricter. */
@@ -174,8 +172,8 @@ export function lenderHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
         db.creditCardAccount.update({ where: { id: card.id }, data: { outstandingPaise: Math.max(0, card.outstandingPaise - app.principalPaise) } }),
         db.cardCharge.create({ data: { cardAccountId: card.id, merchant: `EMI conversion · ${quote.lenderName}`, category: 'other', amountPaise: -app.principalPaise, postedAt: disbursedAt } }),
       ]);
-    } else if ((app.kind === 'balance_switch_emi' || app.kind === 'repayment_plan') && card) {
-      // The lender clears the carried balance on the latest bill (a repayment plan clears the whole card balance)
+    } else if (app.kind === 'balance_switch_emi' && card) {
+      // The lender clears the carried balance on the latest bill
       const statement = await db.cardStatement.findFirst({ where: { cardAccountId: card.id }, orderBy: { periodEnd: 'desc' } });
       if (statement) {
         const onTime = disbursedAt.toISOString().slice(0, 10) <= statement.dueDate;

@@ -17,7 +17,7 @@ export function creditHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
     const l = await db.ladderProgress.findUnique({ where: { memberId } });
     const tier = CreditTier.parse(l?.tier ?? 'starter');
     const snap = await buildSnapshot(ctx, memberId);
-    const stressed = !!snap.onRepaymentPlan || stressSignals(snap, activeRules()).length > 0;
+    const stressed = !!snap.onPayDownPlan || stressSignals(snap, activeRules()).length > 0;
     return { tier, streak: l?.onTimeStreak ?? 0, stressed };
   };
 

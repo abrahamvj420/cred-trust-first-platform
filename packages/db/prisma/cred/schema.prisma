@@ -59,6 +59,27 @@ model Member {
   alerts            MemberAlert[]
   complaints        Complaint[]
   noticeAgreements  NoticeAgreement[]
+  payDownPlans      PayDownPlan[]
+}
+
+/// A plan to clear a carried card balance by paying the member's own card bank a fixed amount each month. No lender, no loan.
+model PayDownPlan {
+  id                String    @id @default(cuid())
+  memberId          String
+  cardId            String
+  months            Int
+  monthlyPaise      Int
+  startBalancePaise Int
+  totalInterestPaise Int
+  savingPaise       Int
+  /// Sim date the plan started
+  startedOn         String
+  startedAt         DateTime  @default(now())
+  /// active | completed | stopped
+  status            String    @default("active")
+  endedOn           String?
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 }
 
 /// Agreement to the privacy notice. Anonymous until the person gives a name and email (no personal data before that).

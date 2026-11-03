@@ -11,7 +11,6 @@ import { Screen } from '../../_shell/Screen';
 
 const KIND: Record<string, string> = {
   purchase_emi: 'EMI on a card purchase',
-  repayment_plan: 'Repayment plan for your card',
   personal_loan: 'Personal loan',
   loan_against_funds: 'Loan against your holdings',
   balance_switch_emi: 'Card balance moved to an EMI',

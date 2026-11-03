@@ -63,6 +63,7 @@ async function buy(key, amountPaise, item) {
     headers: m,
     body: { orderId: `SS-${key}-${Date.now()}`, amountPaise, description: item, shopperPhone: phoneOf[key], returnUrl: 'http://localhost:3002/order/x', instrument: { method: 'card', cardToken: cards[0].token } },
   });
+  if (!created.nextAction) throw new Error(`${key}'s card payment of ${amountPaise / 100} was not authorisable: ${created.payment.failureReason}`);
   const authId = created.nextAction.url.split('/').at(-1);
   await http(`${ECO_API}/bank/v1/card-auth/${authId}/otp`, { method: 'POST', body: { otp: '123456' } });
 }
@@ -197,6 +198,76 @@ async function clickText(text, selector = 'button, a, label') {
 }
 // Case-insensitive: innerText applies CSS text-transform (overlines are uppercase)
 const waitText = (t, ms = 15000) => until(() => page.evaluate((x) => document.body.innerText.toLowerCase().includes(x.toLowerCase()), t), `text "${t}"`, ms);
+
+// ── Pay-down plan (also: pnpm screenshots paydown) ─────────────────────────
+/** Rohan: the truth about his balance, a pay-down plan on his own card, payments through bill pay, the streak. No lender anywhere. */
+async function payDownJourney(prefix = 'pd') {
+  const advance = async () => {
+    await http(`${ECO_API}/sim/v1/clock/advance`, { method: 'POST', body: { months: 1 } });
+    await drain();
+  };
+  await reset();
+  const token = await signIn('rohan');
+  await buy('rohan', 1_50_000_00, 'Aero 14 Laptop');
+  await drain();
+  await page.goto(CRED, { waitUntil: 'domcontentloaded' });
+  await waitText('The truth, in rupees', 20000);
+  await waitText('Paying only the minimum');
+  await settle();
+  await check('help card with the truth', { shot: `${prefix}-01-help-card-truth` });
+  await clickText('See a plan', 'a');
+  await waitText('Clear it over');
+  const ticked = await page.evaluate(() => document.querySelectorAll('input:checked').length);
+  if (ticked) failures.push(`pay-down: ${ticked} choice(s) pre-selected`);
+  await settle();
+  await check('pay-down truth and options', { shot: `${prefix}-02-truth-and-options` });
+  await clickText('a month for 12 months', 'label');
+  await page.click('input[type=checkbox]');
+  await settle();
+  await check('plan chosen', { shot: `${prefix}-03-chosen` });
+  await clickText('Start my plan', 'button');
+  await waitText('starts with your next bill', 20000);
+  await settle();
+  await check('plan started', { shot: `${prefix}-04-started` });
+  const started = await page.evaluate(() => document.body.innerText);
+  if (/Northstar|lender|loan amount/i.test(started.replace(/No loan/g, ''))) failures.push('pay-down: a lender or loan is mentioned');
+  await visit(`${CRED}/loans`, 'loans: nothing new', {});
+  if (!(await page.evaluate(() => /no loans|nothing/i.test(document.body.innerText)))) failures.push('pay-down: Loans is not empty');
+  await visit(`${CRED}/cards`, 'card with its plan', { shot: `${prefix}-05-card-with-plan` });
+  // No new credit while on a plan, even when he asks: Convert to EMI on the laptop
+  await visit(`${CRED}/cards/card_rohan`, 'card detail', {});
+  await clickText('Convert to EMI', 'button');
+  await waitText('pay-down plan', 20000);
+  await settle();
+  await check('no new credit on a plan', { shot: `${prefix}-13-no-credit-on-plan` });
+
+  await advance();
+  await visit(`${CRED}/alerts`, 'plan reminder', { shot: `${prefix}-06-reminder` });
+  await visit(`${CRED}/pay/card_rohan`, 'bill pay with the plan amount', {});
+  await waitText('Your plan amount');
+  await clickText('Your plan amount', 'label');
+  await settle();
+  await check('plan amount chosen', { shot: `${prefix}-07-pay-plan-amount` });
+  await clickText('Pay ', 'button');
+  await waitText('Payment successful', 20000);
+  await waitText('coins');
+  await settle();
+  await check('plan payment made', { shot: `${prefix}-08-paid` });
+
+  await advance();
+  await visit(`${CRED}/pay-down-plan`, 'plan on track', {});
+  await waitText('On track');
+  await check('plan on track', { shot: `${prefix}-09-on-track` });
+  await visit(`${CRED}/credit`, 'ladder counts it', {});
+  await waitText('On your plan');
+  await check('ladder on plan', { shot: `${prefix}-10-ladder` });
+  await adminVisit(`${ADMIN}/`, 'admin overview with plans', `${prefix}-11-admin-overview`);
+  await adminVisit(`${ADMIN}/audit`, 'admin audit with plan', `${prefix}-12-admin-audit`);
+  if (!(await page.evaluate(() => document.body.innerText.includes('pay_down_plan.created')))) failures.push('pay-down: admin log has no pay_down_plan.created');
+  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+  void token;
+  log('pay-down plan: the truth, a plan on his own card (no lender), bill pay, coins, streak, admin');
+}
 
 // ── Sign-up journey (pnpm screenshots signup) ───────────────────────────────
 /** Sets an input the way typing does, so React sees it (date inputs included). */
@@ -431,15 +502,16 @@ await reset();
 // Signed-out
 await page.goto(`${CRED}/status`, { waitUntil: 'domcontentloaded' });
 await page.evaluate(() => localStorage.clear());
-if (milestone === 'signup') {
-  await signupJourney();
+if (milestone === 'signup' || milestone === 'paydown') {
+  if (milestone === 'signup') await signupJourney();
+  else await payDownJourney();
   await browser.close();
   await reset();
   if (failures.length) {
     console.error(`\n${failures.length} problem(s):\n${failures.map((f) => `  ✗ ${f}`).join('\n')}`);
     process.exit(1);
   }
-  console.log(`\nSign-up journey passed. Screenshots in docs/screenshots/${milestone}/`);
+  console.log(`\n${milestone} journey passed. Screenshots in docs/screenshots/${milestone}/`);
   process.exit(0);
 }
 await visit(CRED, 'sign-in', { shot: '01-sign-in' });
@@ -1011,36 +1083,8 @@ async function deskVisit(url, label, shot, { navigate = true } = {}) {
 const SHOP = 'http://localhost:3002';
 const ECO = 'http://localhost:3003';
 
-// Repayment plan: Rohan's help card → plan → confirmed → tracked in Loans; no new credit after
-{
-  await reset();
-  const token = await signIn('rohan');
-  await buy('rohan', 1_50_000_00, 'Aero 14 Laptop');
-  await page.goto(CRED, { waitUntil: 'domcontentloaded' });
-  await waitText('See a plan', 20000);
-  await settle();
-  await check('help card with plan', { shot: 'm7-01-help-card-plan' });
-  await clickText('See a plan', 'a');
-  await waitText('Over how long?');
-  await clickText('a month for 6 months', 'label');
-  await page.click('input[type=checkbox]');
-  await settle();
-  await check('plan options', { shot: 'm7-02-plan-options' });
-  await clickText('Set up this plan', 'button');
-  await page.waitForSelector('input[autocomplete=one-time-code]');
-  await page.type('input[autocomplete=one-time-code]', '123456');
-  await clickText('Confirm my plan', 'button');
-  await until(() => page.evaluate(() => location.pathname.startsWith('/loans/')), 'plan in loans', 20000);
-  await drain();
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  await settle();
-  await check('plan schedule', { shot: 'm7-03-plan-in-loans' });
-  await buy('rohan', 38_500_00, 'Studio 27 4K Monitor');
-  await drain();
-  await visit(`${CRED}/profile/data`, 'rohan decisions on plan', { shot: 'm7-04-no-credit-on-plan' });
-  void token;
-  log('repayment plan: chosen, confirmed by the partner, tracked; no new credit while on it');
-}
+// Pay-down plan: Rohan's help card → the truth → a plan on his own card (no lender)
+await payDownJourney();
 
 // EMI bounce: Aarav's laptop EMI, then a cash crunch
 {

@@ -5,12 +5,14 @@ import { Badge, EmptyState, ErrorState, LoadingScreen, Money } from '@cred/ui';
 import { dueLabel } from '@/lib/format';
 import { useApi } from '@/lib/live';
 import { CardTile } from '../_components/CardTile';
+import { PlanProgress } from '../_components/PayDown';
 import { Screen } from '../_shell/Screen';
 
 export default function CardsPage() {
   const cards = useApi(credApi.member.cards);
   const home = useApi(credApi.member.home);
   const today = home.data?.simDate;
+  const plan = useApi(credApi.products.payDownPlan).data?.plan;
   return (
     <Screen title="Cards" tab="cards">
       {cards.error && !cards.data ? (
@@ -26,6 +28,7 @@ export default function CardsPage() {
           return (
             <div key={c.id} className="flex flex-col gap-3">
               <CardTile card={c} href={`/cards/${c.id}`} />
+              {plan?.status === 'active' && plan.cardId === c.id ? <PlanProgress plan={plan} href="/pay-down-plan" /> : null}
               {due ? (
                 <dl className="grid grid-cols-3 gap-3 rounded-lg border border-border bg-surface p-4 text-caption shadow-e1">
                   <div>

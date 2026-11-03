@@ -20,6 +20,7 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
       offers: true,
       loans: { where: { status: { in: ['applied', 'approved', 'disbursed'] } } },
       helpPlans: { where: { simDate: { startsWith: month } } },
+      payDownPlans: { where: { status: 'active' } },
     },
   });
   const card = member.cards[0];
@@ -50,7 +51,7 @@ export async function buildSnapshot(ctx: Ctx, memberId: string): Promise<MemberS
     smartSavingsLastAskedOn: lastAskedOn,
     verifiedMonthlyIncomePaise: member.income?.monthlyNetPaise ?? null,
     existingEmiPaise: member.loans.filter((l) => l.status === 'disbursed').reduce((a, l) => a + l.emiPaise, 0),
-    onRepaymentPlan: member.loans.some((l) => l.kind === 'repayment_plan'),
+    onPayDownPlan: member.payDownPlans.length > 0,
     limitedMembership: member.membership === 'limited',
     // The limit in force: the ladder tier's, raised by verified salary
     ladder: { tier, limitPaise: creditLine(tier, member.income?.monthlyNetPaise ?? null, false, activeRules()).limitPaise },

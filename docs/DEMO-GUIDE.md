@@ -91,31 +91,40 @@ Why there's no offer: the monitor clears the big-purchase bar (₹25,000), but C
 
 ---
 
-## Journey 3 · Rohan buys the same laptop: help, not credit, and a pay-down plan
+## Journey 3 · Rohan buys the same laptop: help, not credit, and a pay-down plan on his own card
+
+**No lender is involved.** Rohan pays only the minimum, so a loan would add to his problem. CRED doesn't earn from his card interest, so it shows him the truth and helps him clear it on his own card.
 
 **Reset demo**. CRED app as **Rohan Das**.
 
 | # | Where | Click | You should see |
 |---|---|---|---|
-| 1 | CRED app | (nothing) | Home: bill ₹78,879, outstanding ₹90,212 (36% of a ₹2,50,000 limit). |
+| 1 | CRED app | (nothing) | Home: bill ₹78,879 due 5 Nov, outstanding ₹90,212 (36% of a ₹2,50,000 limit). |
 | 2 | ShopKart | **Shopping as** → **Rohan Das** → **Switch** → **Aero 14 Laptop** → **Buy now** → **Credit or debit card** → **Mock Bank VISA ···· 9013 (saved)** → **Pay ₹1,50,000** → Mock Bank: any 6 digits → **Confirm payment** | Order placed (the bank approves: he's within his limit). |
-| 3 | CRED app | (no refresh) | **No offer.** A **HERE TO HELP** card: *"You're carrying ₹2,40,212 on your card… about ₹9,921 a month in interest… a repayment plan can spread it out"*, with **Talk to us** and **See a plan**. Utilisation 96%. |
-| 4 | Console | **Decisions** | Rohan Das · big spend support · **help, not credit** · `stress_signal`. The stress check is ✗: minimum-only payments, partial payments, high utilisation (96%). |
-| 5 | CRED app | **See a plan** | **A plan for your balance**: on your card today ₹2,40,212; **Over how long?** 3 months ₹81,677 · **6 months ₹41,448** · 12 months ₹21,343, each with total interest and how much less it is than leaving it on the card. |
-| 6 | CRED app | **6 months**, then tick **I understand the monthly amount, the rate and that there are no fees.** | Northstar Finance, 12% a year, fees ₹0, total interest ₹8,477 (₹35,717 if it stayed on the card). *"Northstar Finance pays off your card now."* |
-| 7 | CRED app | **Set up this plan** → type the code → **Confirm my plan** | The loan opens: **Repayment plan for your card**, ₹41,448 a month for 6 months. |
-| 8 | CRED app | **Cards** tab | Card outstanding **₹0**, bill status **Paid**. |
-| 9 | CRED app | Home → **Credit** | *"We'll show what's available once your card balance is lower."* No credit line while he's on the plan. |
-| 10 | Mock Bank portal: http://localhost:3003/bank?c=per_rohan | (nothing) | Credit card ···· 9013: **₹0** outstanding. The lender paid his own card at **Mock Bank**, his card's bank, not into his account. |
-| 11 | Console | **Partners & webhooks** | Webhooks received: `lender.loan.decided`, then **`bank.card.payment.received`** from the bank, then `lender.loan.disbursed`. |
+| 3 | CRED app | (no refresh) | **No offer.** A **HERE TO HELP** card: *"You're carrying ₹2,40,212 on your card… about ₹9,921 a month in interest… a pay-down plan on your own card can clear it step by step, with no loan"*. Inside it, **THE TRUTH, IN RUPEES**: paying only the minimum takes **35 years** and **₹9,10,050** in interest; Plan 3 months ₹86,761 a month (₹20,069 interest) · 6 months ₹45,989 (₹35,717) · 12 months ₹25,730 (₹68,540). **Talk to us** and **See a plan**. |
+| 4 | Console | **Decisions** | Rohan Das · big spend support · **help, not credit** · `stress_signal` (minimum-only payments, partial payments, 96% utilisation). |
+| 5 | CRED app | **See a plan** | **Pay-down plan**: the truth table again, with each plan's saving against minimum only (₹8,89,981 · ₹8,74,332 · ₹8,41,510 less), and *"A fixed amount each month to your own card's bank, through bill pay. No loan, no fee."* **Clear it over**: nothing is pre-selected. |
+| 6 | CRED app | **₹25,730 a month for 12 months**, tick **I'll aim to pay this amount each month. I can pay just the minimum, or stop the plan, any time.** | **You pay: your own card's bank, through bill pay** · each month ₹25,730 · **Loan or fee: None**. Below: **Stay on track and you'll start unlocking member benefits** (coins, and each on-track month counts towards the credit ladder; 3 in a row reaches Silver). |
+| 7 | CRED app | **Start my plan** | **Pay-down plan · 0 of 12 on track** · *"Your plan starts with your next bill. Pay what you can on the current one; the minimum is fine."* |
+| 8 | CRED app | **Cards** tab | Under the card: **Pay-down plan** with progress (₹0 paid of ₹2,40,212, *"to your own card. No loan."*). |
+| 9 | CRED app | **Profile** → **Your loans** | **No loans.** The plan is not a loan. |
+| 10 | Control room | **Rohan** → **Advance a month**, pressed **once** | Clock moves to 2 Dec. Salary arrived; his bank paid the 5 Nov bill's minimum, as he always does. |
+| 11 | CRED app | The bell (Alerts) | One reminder: **Your plan amount this month: ₹25,730**. *"Pay it to your card by 5 Dec 2026 to stay on track. If this month is tight, the minimum is fine too."* |
+| 12 | CRED app | Home → **Pay** on the bill → **Your plan amount** (₹25,730) → **Pay ₹25,730** | **Payment successful**, to Mock Bank ···· 9013, **+2,570 coins for paying on time**. |
+| 13 | Mock Bank portal: http://localhost:3003/bank?c=per_rohan | (nothing) | **CARD BILL UPI XX9013 −₹25,730** from his own salary account, paid to his card at Mock Bank. |
+| 14 | Control room | **Rohan** → **Advance a month** (the second press) | Clock moves to 2 Jan; the 5 Dec due date has passed. |
+| 15 | CRED app | Cards → the **Pay-down plan** card (or Home → **See a plan**) | **1 of 12 on track**: *"Bill due 5 Dec: ₹25,730 of ₹25,730 · On track"*, next ₹25,730 by 5 Jan, **Pay this month's amount**, **Stop the plan**. |
+| 16 | CRED app | Home → **Credit** | The ladder streak is **1**, and the 5 Dec bill shows **On your plan**. No credit line is shown while he's on the plan. |
+| 17 | Console | **Overview** | Defaults and strain: **Members on a pay-down plan (own card, no loan; no new credit): 1** and **Pay-down plans on track: 1 of 1**. |
+| 18 | Console | **Permissions & audit** | **pay_down_plan.created** for Rohan Das, with `lender: none`. There is no loan and no lender call. |
 
-| ![](screenshots/demo-guide/j3-01-help-card.png) | ![](screenshots/demo-guide/j3-03-plan-options.png) | ![](screenshots/demo-guide/j3-05-plan-loan.png) | ![](screenshots/demo-guide/j3-06-card-after.png) |
+**Advance a month: 2 presses.** The first lets his salary arrive and creates the first plan bill. The second passes its due date, so it counts as on track.
+
+| ![](screenshots/demo-guide/j3-01-help-card.png) | ![](screenshots/demo-guide/j3-04-plan-chosen.png) | ![](screenshots/demo-guide/j3-09-pay-plan-amount.png) | ![](screenshots/demo-guide/j3-12-on-track.png) |
 |---|---|---|---|
-| Step 3 · help card | Step 5 · plan options | Step 7 · plan in Loans | Step 8 · card cleared |
+| Step 3 · the truth | Step 6 · 12 months chosen | Step 12 · plan amount | Step 15 · on track |
 
-Also: [admin decision](screenshots/demo-guide/j3-02-admin-decision.png) · [Mock Bank portal](screenshots/demo-guide/j3-08-mock-bank.png) · [webhook log](screenshots/demo-guide/j3-09-webhook-log.png).
-
-Note: the Mock Bank portal's account history shows a few rows dated later in November (rent, everyday spends). That's a quirk of the seeded history, not something the demo did.
+Also: [admin decision](screenshots/demo-guide/j3-02-admin-decision.png) · [truth and options](screenshots/demo-guide/j3-03-plan-options.png) · [plan started](screenshots/demo-guide/j3-05-plan-started.png) · [under the card](screenshots/demo-guide/j3-06-card-with-plan.png) · [no loans](screenshots/demo-guide/j3-07-no-loans.png) · [reminder](screenshots/demo-guide/j3-08-reminder.png) · [paid](screenshots/demo-guide/j3-10-paid.png) · [Mock Bank](screenshots/demo-guide/j3-11-mock-bank.png) · [ladder](screenshots/demo-guide/j3-13-ladder.png) · [admin overview](screenshots/demo-guide/j3-14-admin-overview.png) · [admin audit](screenshots/demo-guide/j3-15-admin-audit.png).
 
 ---
 

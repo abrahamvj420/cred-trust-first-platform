@@ -15,6 +15,7 @@ import { Hub } from './hub';
 import { checkMembership } from './membership';
 import { memberHandlers } from './member';
 import { signupHandlers } from './signup';
+import { payDownHandlers } from './paydown';
 import { moneyHandlers } from './money';
 import { bearer, issueToken, verifyStaffToken, verifyToken } from './session';
 import { ingestWebhook } from './webhooks';
@@ -102,6 +103,7 @@ const h = handlers()
 
 memberHandlers(ctx, h);
 signupHandlers(ctx, h);
+payDownHandlers(ctx, h);
 moneyHandlers(ctx, h);
 adminHandlers(ctx, h);
 creditHandlers(ctx, h);

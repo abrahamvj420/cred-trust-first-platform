@@ -8,6 +8,7 @@ import { Screen } from '../_shell/Screen';
 
 const OUTCOME: Record<LadderStatus['history'][number]['outcome'], { text: string; tone: 'positive' | 'neutral' | 'warning' }> = {
   paid_in_full: { text: 'Paid in full', tone: 'positive' },
+  on_plan: { text: 'On your plan', tone: 'positive' },
   part_paid: { text: 'Part paid', tone: 'neutral' },
   missed: { text: 'Missed', tone: 'warning' },
   open: { text: 'Due', tone: 'neutral' },
@@ -72,7 +73,7 @@ export default function Credit() {
                 {l.creditLine.shown ? `Yours if you ever need it${l.creditLine.basis === 'salary_verified' ? ', with your verified salary' : ''}. We won’t suggest you borrow.` : l.creditLine.note}
               </p>
               {!l.creditLine.shown ? (
-                <a href="/repayment-plan" className="text-callout text-accent underline">
+                <a href="/pay-down-plan" className="text-callout text-accent underline">
                   See a plan to clear your balance
                 </a>
               ) : null}

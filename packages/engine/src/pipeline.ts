@@ -1,3 +1,4 @@
+import { monthlyCardInterestPaise } from './features/pay-down';
 import {
   formatInr,
   type BenefitComparison,
@@ -35,7 +36,7 @@ export interface OfferDraft {
 }
 
 export interface HelpDraft {
-  kind: 'repayment_plan';
+  kind: 'pay_down_plan';
   title: string;
   body: string;
   monthlyInterestPaise: number;
@@ -168,20 +169,20 @@ export function permissionCheck(d: Decision, s: MemberSnapshot, rules: RuleValue
 }
 
 export function repaymentHelp(s: MemberSnapshot, rules: RuleValues): HelpDraft {
-  const monthlyInterest = Math.round((s.card.outstandingPaise * rules.cardInterestMonthlyBps * (10_000 + rules.gstBps)) / 10_000 / 10_000);
+  const monthlyInterest = monthlyCardInterestPaise(s.card.outstandingPaise, rules);
   const bill = s.statements[0];
   return {
-    kind: 'repayment_plan',
+    kind: 'pay_down_plan',
     title: `You’re carrying ${formatInr(s.card.outstandingPaise)} on your card`,
     body:
       `At 3.5% a month plus GST, that’s about ${formatInr(monthlyInterest)} a month in interest. ` +
       (bill ? `Paying the full bill of ${formatInr(bill.totalDuePaise)} by ${prettyDate(bill.dueDate)} stops it. ` : '') +
-      `If that’s hard this month, a repayment plan can spread it out, and we’re here to talk it through.`,
+      `If that’s hard this month, a pay-down plan on your own card can clear it step by step, with no loan, and we’re here to talk it through.`,
     monthlyInterestPaise: monthlyInterest,
   };
 }
 
-/** Stressed members get help, not credit, whoever asked. A member on a repayment plan is offered nothing new until it's done. */
+/** Stressed members get help, not credit, whoever asked. A member on a pay-down plan is offered nothing new until it's done. */
 export function stressCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): EngineResult | null {
   if (s.limitedMembership) {
     return d.stop(
@@ -191,12 +192,12 @@ export function stressCheck(d: Decision, s: MemberSnapshot, rules: RuleValues): 
       'Your membership covers UPI and bill pay for now, so we won’t suggest credit. Paying bills on time helps your score, and more opens up as it grows.',
     );
   }
-  if (s.onRepaymentPlan) {
+  if (s.onPayDownPlan) {
     return d.stop(
       'stress',
-      'on_repayment_plan',
-      'Member is on a repayment plan: no new offers until it is complete.',
-      'You’re on a repayment plan, so we won’t suggest anything new until it’s done. Keep going: every payment brings you closer.',
+      'on_pay_down_plan',
+      'Member is on a pay-down plan: no new offers until it is complete.',
+      'You’re on a pay-down plan, so we won’t suggest anything new until it’s done. Keep going: every payment brings you closer.',
     );
   }
   const signals = stressSignals(s, rules);

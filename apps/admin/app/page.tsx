@@ -71,7 +71,8 @@ export default function Overview() {
                   ['Default rate', pct(o.defaults.defaultRateBps)],
                   ['EMIs bounced in the last month', <span key="b" className={o.defaults.bouncesThisMonth ? 'text-warning' : ''}>{o.defaults.bouncesThisMonth}</span>],
                   ['Card bills missed (below minimum or late)', o.defaults.cardBillsMissed],
-                  ['Members on a repayment plan (no new credit)', o.defaults.membersOnRepaymentPlans],
+                  ['Members on a pay-down plan (own card, no loan; no new credit)', o.defaults.membersOnPayDownPlans],
+                  ['Pay-down plans on track', `${o.defaults.payDownPlansOnTrack} of ${o.defaults.membersOnPayDownPlans}`],
                   ['Members showing strain (got help, not credit)', o.defaults.membersShowingStrain],
                 ]}
               />

@@ -17,6 +17,7 @@ const ICON: Record<MemberAlert['kind'], 'chart' | 'loan' | 'bell' | 'doc' | 'tre
   income: 'check',
   loan: 'loan',
   policy: 'shield',
+  plan: 'trend',
 };
 
 /** Alerts are information (a market move, a claim update, a tier unlocked), never offers. */

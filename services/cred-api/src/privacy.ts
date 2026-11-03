@@ -210,6 +210,7 @@ export function privacyHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
       db.wearableLink.deleteMany({ where: { memberId } }),
       db.ladderProgress.deleteMany({ where: { memberId } }),
       db.helpPlan.deleteMany({ where: { memberId } }),
+      db.payDownPlan.deleteMany({ where: { memberId } }),
       db.offer.deleteMany({ where: { memberId, id: { notIn: keepOfferIds } } }),
       db.engineDecision.deleteMany({ where: { memberId, offer: null } }),
       db.domainEvent.deleteMany({ where: { memberId } }),

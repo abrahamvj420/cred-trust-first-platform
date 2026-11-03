@@ -33,8 +33,8 @@ export interface MemberSnapshot {
     declines: { feature: FeatureKey; decidedOn: string }[];
   };
   helpThisMonth: number;
-  /** On a repayment plan: no new credit until it's done. */
-  onRepaymentPlan?: boolean;
+  /** On a pay-down plan for their card: no new credit until it's done. */
+  onPayDownPlan?: boolean;
   /** Below the membership score: UPI and bill pay only, no credit suggestions. */
   limitedMembership?: boolean;
 }

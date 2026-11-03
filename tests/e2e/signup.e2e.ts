@@ -123,12 +123,12 @@ describe('sign-up', () => {
 
     // Credit, cover and investments stay closed, whatever the app asks for
     for (const call of [
-      cred(credApi.member.creditLadder, { token }),
-      cred(credApi.products.holdings, { token }),
-      cred(credApi.products.repaymentPlan, { token }),
-      cred(credApi.products.policies, { token }),
+      () => cred(credApi.member.creditLadder, { token }),
+      () => cred(credApi.products.holdings, { token }),
+      () => cred(credApi.products.startPayDownPlan, { token, body: { months: 6, acknowledged: true } }),
+      () => cred(credApi.products.policies, { token }),
     ]) {
-      await expect(call).rejects.toMatchObject({ status: 403 });
+      await expect(call()).rejects.toMatchObject({ status: 403 });
     }
 
     // UPI works straight away

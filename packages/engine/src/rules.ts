@@ -22,7 +22,7 @@ export interface RuleDefinition {
     | 'Protection'
     | 'Wellness'
     | 'Wealth management'
-    | 'Repayment plan'
+    | 'Pay-down plan'
     | 'Membership';
   label: string;
   unit: RuleUnit;
@@ -105,9 +105,8 @@ export const RULE_DEFINITIONS = {
   // Wealth management (feature 7)
   goalAssumedReturnBps: { group: 'Wealth management', label: 'Return assumed for goal plans', unit: 'bps', value: 1000, min: 0, max: 2000, description: 'Yearly return assumed when planning a goal. Guidance only, not a promise.' },
 
-  // Repayment plan (help for members carrying a balance)
-  planRatePaBps: { group: 'Repayment plan', label: 'Repayment plan rate', unit: 'bps', value: 1200, min: 0, max: 2400, description: 'Yearly rate on a plan to clear a carried card balance; no fee. Far below card interest.' },
-  planMinBalancePaise: { group: 'Repayment plan', label: 'Smallest balance for a plan', unit: 'paise', value: 5_000_00, min: 1_000_00, max: 1_00_000_00, description: 'Below this, paying the balance off directly is simpler than a plan.' },
+  // Pay-down plan (help for members carrying a balance, on their own card)
+  planMinBalancePaise: { group: 'Pay-down plan', label: 'Smallest balance for a pay-down plan', unit: 'paise', value: 5_000_00, min: 1_000_00, max: 1_00_000_00, description: 'Below this, paying the balance off directly is simpler than a plan.' },
 
   // Membership gate (sign-up)
   membershipMinScore: { group: 'Membership', label: 'Credit score for full membership', unit: 'count', value: 750, min: 300, max: 900, description: 'At or above this bureau score, sign-up leads to full membership. Below it: UPI and bill pay only, and no credit suggestions.' },

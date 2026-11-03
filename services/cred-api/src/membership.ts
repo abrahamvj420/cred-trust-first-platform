@@ -21,7 +21,7 @@ const LIMITED: RegExp[] = [
   /^\/v1\/decisions$/,
   /^\/v1\/auth\//,
 ];
-const LIMITED_READS: RegExp[] = [/^\/v1\/offers$/, /^\/v1\/loans$/, /^\/v1\/aa\/consents$/];
+const LIMITED_READS: RegExp[] = [/^\/v1\/offers$/, /^\/v1\/loans$/, /^\/v1\/aa\/consents$/, /^\/v1\/pay-down-plan$/];
 
 /** Enforced for every member request, so the gate can't be walked around from the app. */
 export async function checkMembership(db: CredDb, memberId: string, method: string, route: string): Promise<void> {

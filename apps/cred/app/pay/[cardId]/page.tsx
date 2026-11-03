@@ -9,7 +9,7 @@ import { dueLabel, longDate } from '@/lib/format';
 import { useApi } from '@/lib/live';
 import { Screen } from '../../_shell/Screen';
 
-type Amount = 'full' | 'minimum' | 'custom';
+type Amount = 'full' | 'minimum' | 'plan' | 'custom';
 type Result = EndpointResponse<typeof credApi.member.payBill>;
 
 /** Bill pay: full is preselected, so it's one tap from Home to Pay. Never blocked by offers. */
@@ -17,6 +17,9 @@ export default function PayBill() {
   const { cardId } = useParams<{ cardId: string }>();
   const detail = useApi(credApi.member.card, { params: { cardId } }, { live: false });
   const home = useApi(credApi.member.home, undefined, { live: false });
+  // On a pay-down plan, this month's plan amount is one of the choices (never pre-selected)
+  const plan = useApi(credApi.products.payDownPlan, undefined, { live: false }).data?.plan;
+  const planLeft = plan?.status === 'active' && plan.cardId === cardId ? plan.nextAmountPaise : 0;
   const [amount, setAmount] = useState<Amount>('full');
   const [custom, setCustom] = useState('');
   const [source, setSource] = useState<BillPaymentSource>('upi');
@@ -40,7 +43,7 @@ export default function PayBill() {
         : d && customPaise > d.card.outstandingPaise
           ? `That’s more than your card balance of ${formatInr(d.card.outstandingPaise)}`
           : null;
-  const payPaise = amount === 'full' ? remaining : amount === 'minimum' ? minLeft : customPaise;
+  const payPaise = amount === 'full' ? remaining : amount === 'minimum' ? minLeft : amount === 'plan' ? Math.min(planLeft, remaining) : customPaise;
   const canPay = !busy && payPaise > 0 && !customError && (amount !== 'custom' || custom !== '');
 
   async function pay() {
@@ -49,7 +52,7 @@ export default function PayBill() {
     try {
       const r = await api(credApi.member.payBill, {
         params: { cardId },
-        body: amount === 'custom' ? { kind: 'custom', amountPaise: customPaise, source } : { kind: amount, source },
+        body: amount === 'custom' || amount === 'plan' ? { kind: 'custom', amountPaise: payPaise, source } : { kind: amount, source },
       });
       setDone(r);
     } catch (e) {
@@ -99,6 +102,7 @@ export default function PayBill() {
             onChange={setAmount}
             options={[
               { value: 'full', title: due.status === 'partial' ? 'Remaining bill' : 'Full bill', detail: 'No interest', trailing: <Money paise={remaining} className="font-semibold" /> },
+              ...(planLeft > 0 && planLeft < remaining ? [{ value: 'plan' as const, title: 'Your plan amount', detail: 'Keeps your pay-down plan on track', trailing: <Money paise={planLeft} className="font-semibold" /> }] : []),
               ...(minLeft > 0 ? [{ value: 'minimum' as const, title: 'Minimum due', detail: 'Interest applies to the rest', trailing: <Money paise={minLeft} className="font-semibold" /> }] : []),
               { value: 'custom', title: 'Another amount', detail: 'Pay what works for you' },
             ]}

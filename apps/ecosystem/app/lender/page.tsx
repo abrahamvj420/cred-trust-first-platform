@@ -6,7 +6,7 @@ import { Suspense } from 'react';
 import { ecosystem } from '@/lib/api';
 import { day, Panel, Portal, State, usePortal } from '../_portal';
 
-const KIND: Record<string, string> = { purchase_emi: 'EMI on card purchase', personal_loan: 'Personal loan', loan_against_funds: 'Loan against holdings', balance_switch_emi: 'Card balance switch', repayment_plan: 'Repayment plan' };
+const KIND: Record<string, string> = { purchase_emi: 'EMI on card purchase', personal_loan: 'Personal loan', loan_against_funds: 'Loan against holdings', balance_switch_emi: 'Card balance switch' };
 
 function Lender() {
   const q = usePortal((c) => ecosystem(ecosystemApi.lender.customerLoans, { params: { customerRef: c } }));
