@@ -16,7 +16,7 @@ Why not the APIs on Vercel too? They keep their data in SQLite files, ecosystem-
 |---|---|---|
 | CRED app | Vercel project, Root Directory `apps/cred` | `CRED_API_URL`, `ECOSYSTEM_API_URL`, `DEMO_MODE=true` |
 | Console + control room | Vercel project, Root Directory `apps/admin` | the same, plus `CRED_APP_URL`, `ADMIN_APP_URL`, `SHOP_APP_URL`, `ECOSYSTEM_APP_URL` and `STATUS_TIMEOUT_MS=8000` (for the service status grid) |
-| ShopKart | Vercel project, Root Directory `apps/shop` | the same as CRED app, plus `SHOP_APP_URL` and `SHOPKART_MERCHANT_KEY` (the value Render generated) |
+| ShopKart | Vercel project, Root Directory `apps/shop` | the same as CRED app, plus `SHOP_APP_URL` and `SHOPKART_MERCHANT_KEY` (the same value as on Render) |
 | Partner sites | Vercel project, Root Directory `apps/ecosystem` | the same as CRED app |
 | Both APIs | Render, from `render.yaml` | `CRED_APP_URL`, `ADMIN_APP_URL`, `SHOP_APP_URL`, `ECOSYSTEM_APP_URL` (the four Vercel addresses) |
 
@@ -32,7 +32,7 @@ The API addresses are built into the web apps, so **redeploy the Vercel apps aft
 ## Steps
 
 1. **Vercel:** create the four projects from this GitHub repo, each with its Root Directory as above (framework Next.js; Vercel installs the pnpm workspace from the repo root). Note their addresses, e.g. `https://cred-demo-app.vercel.app`.
-2. **Render:** New → Blueprint → this repo. Fill in the four app addresses when asked. Wait for the first deploy, then copy the service address and the generated `SHOPKART_MERCHANT_KEY`.
+2. **Render:** New → Blueprint → this repo. Fill in the four app addresses and the `SHOPKART_MERCHANT_KEY` (the same value as on the ShopKart project) when asked. Wait for the first deploy, then copy the service address.
 3. **Vercel:** set the environment variables above on each project, then redeploy all four.
 4. Open the console's control room: all six services should show green.
 
