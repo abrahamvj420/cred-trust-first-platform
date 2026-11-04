@@ -4,6 +4,27 @@ The four web apps run on **Vercel**. The two APIs run together in **one free Ren
 
 Why not the APIs on Vercel too? They keep their data in SQLite files, ecosystem-api sends its webhooks from a loop that runs every second, and the CRED app's live updates are long-lived streams. Vercel's serverless functions have no lasting disk and can't hold those open.
 
+## Live addresses
+
+| What | Address |
+|---|---|
+| CRED app | https://cred-demo-app.vercel.app |
+| Console and control room | https://cred-demo-console.vercel.app (control room: `/demo`; login `ops@cred.example` / `trust-first-demo`) |
+| ShopKart | https://cred-demo-shopkart.vercel.app |
+| Partner sites | https://cred-demo-partners.vercel.app |
+| APIs (Render) | https://cred-demo-apis.onrender.com (cred-api) and https://cred-demo-apis.onrender.com/eco (ecosystem-api) |
+
+Vercel projects `cred-demo-app`, `cred-demo-console`, `cred-demo-shopkart` and `cred-demo-partners` are in the CODEBRM team. Production is public; preview deployments keep Vercel's login. To check the hosted demo end to end:
+
+```bash
+GUIDE_OUT=/tmp/hosted-shots \
+GUIDE_CRED_URL=https://cred-demo-app.vercel.app GUIDE_ADMIN_URL=https://cred-demo-console.vercel.app \
+GUIDE_SHOP_URL=https://cred-demo-shopkart.vercel.app GUIDE_ECO_URL=https://cred-demo-partners.vercel.app \
+node scripts/demo-guide.mjs 1 3
+```
+
+To redeploy an app after a change: `VERCEL_ORG_ID=<team id> VERCEL_PROJECT_ID=<project id> vercel deploy --prod` from the repo root (ids in each project's settings). Render redeploys the APIs on every push to `main`.
+
 ## What to know before sharing the link
 
 - **It's public.** Anyone with the links can use the demo, including the control room (**Reset demo**, **Advance a month**) and the console with the login in the README. All data is synthetic.

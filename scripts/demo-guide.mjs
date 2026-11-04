@@ -12,12 +12,14 @@ import path from 'node:path';
 import puppeteer from 'puppeteer-core';
 
 const root = path.resolve(import.meta.dirname, '..');
-const OUT = path.join(root, 'docs/screenshots/demo-guide');
+// GUIDE_*_URL point the run at a hosted demo; GUIDE_OUT keeps its screenshots out of the guide's
+const OUT = process.env.GUIDE_OUT ?? path.join(root, 'docs/screenshots/demo-guide');
 if (process.argv.length === 2) rmSync(OUT, { recursive: true, force: true });
 mkdirSync(OUT, { recursive: true });
-const CRED = 'http://localhost:3000';
-const ADMIN = 'http://localhost:3001';
-const SHOP = 'http://localhost:3002';
+const CRED = process.env.GUIDE_CRED_URL ?? 'http://localhost:3000';
+const ADMIN = process.env.GUIDE_ADMIN_URL ?? 'http://localhost:3001';
+const SHOP = process.env.GUIDE_SHOP_URL ?? 'http://localhost:3002';
+const ECO = process.env.GUIDE_ECO_URL ?? 'http://localhost:3003';
 const CHROME = process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const only = process.argv.slice(2).map(Number);
 const CHARS = Number(process.env.GUIDE_CHARS ?? 700);
@@ -321,7 +323,7 @@ async function journey3() {
   await click('Pay ', { selector: 'button' });
   await see('Payment successful', 30000);
   await step('3.10 paid', 'j3-10-paid');
-  await go('http://localhost:3003/bank?c=per_rohan');
+  await go(`${ECO}/bank?c=per_rohan`);
   await see('CARD BILL UPI');
   await step('3.11 Mock Bank: paid to his own card', 'j3-11-mock-bank');
   await controlRoom('Rohan', 'Advance a month');
