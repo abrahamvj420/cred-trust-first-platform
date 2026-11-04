@@ -46,3 +46,6 @@ packages/db/data/*.db*
 
 # pnpm demo output
 logs/
+
+# R session history
+.Rhistory
