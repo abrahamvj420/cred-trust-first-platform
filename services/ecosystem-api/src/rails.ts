@@ -1,5 +1,5 @@
 import { conflict, handlers, HttpError, notFound } from '@cred/service-kit';
-import { ecosystemApi, localUrl, TxnCategory, type GatewayPayment } from '@cred/types';
+import { ecosystemApi, serviceUrl, TxnCategory, type GatewayPayment } from '@cred/types';
 import { demoCode, maskPhone, simNow, type Ctx } from './context';
 
 type GatewayRow = { id: string; orderId: string; amountPaise: number; method: string; status: string; failureReason: string | null; createdAt: Date };
@@ -189,4 +189,4 @@ export function billPayHandlers(ctx: Ctx, h: ReturnType<typeof handlers>) {
   });
 }
 
-export const ecosystemPagesUrl = () => process.env.ECOSYSTEM_APP_URL ?? localUrl('ecosystem');
+export const ecosystemPagesUrl = () => serviceUrl('ecosystem');

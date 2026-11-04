@@ -1,6 +1,6 @@
 'use server';
 
-import { ecosystemApi, localUrl, MemberKey } from '@cred/types';
+import { ecosystemApi, MemberKey, serviceUrl } from '@cred/types';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
@@ -63,7 +63,7 @@ export async function pay(_: { error: string | null }, form: FormData): Promise<
       amountPaise: cart.totalPaise,
       description: description.slice(0, 140),
       shopperPhone: shopper.phone,
-      returnUrl: `${localUrl('shop')}/order/${orderId}`,
+      returnUrl: `${serviceUrl('shop')}/order/${orderId}`,
       instrument: parsed.data.method === 'card' ? { method: 'card', cardToken: parsed.data.cardToken } : { method: 'upi', vpa: parsed.data.vpa },
     },
   });

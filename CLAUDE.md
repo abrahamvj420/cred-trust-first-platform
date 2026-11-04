@@ -232,6 +232,11 @@ Every screen: loading, empty and error states; AA contrast; 44px tap targets; la
 - **Ecosystem portals:** every partner has a customer-facing page in its own brand (`?c=per_<persona>` picks the customer): `/bank`, `/upi`, `/aa`, `/insurer`, `/fundhouse`, `/lender`, `/health`, plus a directory at `/`. They read only ecosystem-api (`auth: 'page'` endpoints). New themes `lender` and `health`.
 - **Loan against holdings:** CRED sizes the pledge at its own loan-to-value and rounds pledged units **up** (3 decimals), so the pledge never falls a fraction short of the lender's cap.
 
+## Hosting
+
+- Four Next.js apps on Vercel (one project each, Root Directory `apps/<name>`); both APIs in one Render web service from `render.yaml`, run by `scripts/serve-apis.mjs` (seeds, starts both on private ports, serves `/` → cred-api and `/eco/…` → ecosystem-api on `$PORT`). Steps and variables: `docs/HOSTING.md`.
+- Every address comes from `serviceUrl(name)` (`CRED_APP_URL`, `ADMIN_APP_URL`, `SHOP_APP_URL`, `ECOSYSTEM_APP_URL`, `CRED_API_URL`, `ECOSYSTEM_API_URL`), falling back to localhost. CORS and the live-update origins accept both. `HOST` overrides the services' bind address; `NEXT_DIST_DIR` lets a production build run beside `pnpm dev`.
+
 ## Conventions added for sign-up
 
 - **Order (DPDP):** welcome → notice → phone → code → date of birth → name and email → credit check → gate → first card → home. The notice comes before any data. Wording lives in `packages/types/src/notice.ts`; change it → bump `NOTICE_VERSION`.

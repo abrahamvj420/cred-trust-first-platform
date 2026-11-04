@@ -1,4 +1,4 @@
-import { appEndpoints, localUrl, ServiceStatus, type ServiceName, type ServiceProbe } from '@cred/types';
+import { appEndpoints, serviceUrl, ServiceStatus, type ServiceName, type ServiceProbe } from '@cred/types';
 
 /**
  * Contract: appEndpoints.demoStatus. The control-room exception (CLAUDE.md):
@@ -7,10 +7,10 @@ import { appEndpoints, localUrl, ServiceStatus, type ServiceName, type ServicePr
 const SERVICES: ServiceName[] = ['cred', 'admin', 'shop', 'ecosystem', 'cred-api', 'ecosystem-api'];
 
 async function probe(service: ServiceName): Promise<ServiceProbe> {
-  const url = `${localUrl(service)}/status`;
+  const url = `${serviceUrl(service)}/status`;
   const started = Date.now();
   try {
-    const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(1500) });
+    const res = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(Number(process.env.STATUS_TIMEOUT_MS ?? 1500)) });
     const status = ServiceStatus.parse(await res.json());
     return { service, url, status, error: null, latencyMs: Date.now() - started };
   } catch (e) {

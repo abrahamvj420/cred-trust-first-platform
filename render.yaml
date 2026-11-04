@@ -1,0 +1,37 @@
+# Render Blueprint: both APIs in one free web service (see docs/HOSTING.md).
+# The four Next.js apps are hosted on Vercel.
+services:
+  - type: web
+    name: cred-demo-apis
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @cred/db generate
+    startCommand: node scripts/serve-apis.mjs
+    healthCheckPath: /status
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: DEMO_MODE
+        value: "true"
+      - key: LOG_LEVEL
+        value: warn
+      # Only used between the two APIs inside this service
+      - key: WEBHOOK_SECRET_ECOSYSTEM
+        generateValue: true
+      - key: PARTNER_API_KEY_CRED
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      # Must match SHOPKART_MERCHANT_KEY on the ShopKart Vercel project
+      - key: SHOPKART_MERCHANT_KEY
+        generateValue: true
+      # The Vercel apps (for CORS, live updates and redirects back to the apps)
+      - key: CRED_APP_URL
+        sync: false
+      - key: ADMIN_APP_URL
+        sync: false
+      - key: SHOP_APP_URL
+        sync: false
+      - key: ECOSYSTEM_APP_URL
+        sync: false

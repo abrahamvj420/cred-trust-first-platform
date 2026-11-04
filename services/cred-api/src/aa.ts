@@ -1,6 +1,6 @@
 import { creditLine, detectSalary, evaluateSalaryVerified } from '@cred/engine';
 import { conflict, notFound } from '@cred/service-kit';
-import { AaPurpose, CreditTier, ecosystemApi, localUrl, type AaFiType, type PermissionScope } from '@cred/types';
+import { AaPurpose, CreditTier, ecosystemApi, serviceUrl, type AaFiType, type PermissionScope } from '@cred/types';
 import { catalog } from '@cred/db/seed';
 import { randomUUID } from 'node:crypto';
 import { dataUpdated, raiseAlert } from './alerts';
@@ -20,7 +20,7 @@ export const PURPOSE: Record<AaPurpose, { fiTypes: AaFiType[]; months: number; s
 };
 export const PURPOSE_FOR_SCOPE: Partial<Record<PermissionScope, AaPurpose>> = { income_data: 'income_verification', portfolio_data: 'portfolio_tracking', insurance_data: 'protection_review' };
 
-const credAppUrl = () => process.env.CRED_APP_URL ?? localUrl('cred');
+const credAppUrl = () => serviceUrl('cred');
 
 export async function startConsent(ctx: Ctx, memberId: string, purpose: AaPurpose, returnTo: string) {
   const member = await ctx.db.member.findUniqueOrThrow({ where: { id: memberId } });

@@ -8,7 +8,7 @@ import {
   type EndpointQuery,
   type EndpointResponseInput,
   type IsStream,
-  listEndpoints, localUrl, PORTS, type ServiceName, type ServiceStatus } from '@cred/types';
+  listEndpoints, localUrl, PORTS, serviceUrl, type ServiceName, type ServiceStatus } from '@cred/types';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { isDemoMode } from './env';
@@ -44,7 +44,8 @@ export interface ServiceOptions {
   authenticators: Authenticators;
 }
 
-const APP_ORIGINS = (['cred', 'admin', 'shop', 'ecosystem'] as const).map(localUrl);
+// Local apps always; hosted apps from their URL variables
+const APP_ORIGINS = [...new Set((['cred', 'admin', 'shop', 'ecosystem'] as const).flatMap((a) => [localUrl(a), serviceUrl(a)]))];
 
 export function createService(opts: ServiceOptions) {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info', transport: undefined } });
@@ -175,7 +176,7 @@ export function createService(opts: ServiceOptions) {
   }
 
   async function listen(): Promise<void> {
-    await app.listen({ port: Number(process.env.PORT ?? PORTS[opts.name]), host: '127.0.0.1' });
+    await app.listen({ port: Number(process.env.PORT ?? PORTS[opts.name]), host: process.env.HOST ?? '127.0.0.1' });
   }
 
   return { app: app as FastifyInstance, route, implement, status, listen };

@@ -134,6 +134,10 @@ curl -X POST localhost:4000/sim/member-actions -H 'content-type: application/jso
 | Kabir Singh | Newer member; this month's bill includes a flight he can't clear at once | 3, 5, 8 |
 | Rohan Das | Minimum-only payments; the laptop would take him to ~96% of his limit: gets help, not credit, and can set up a pay-down plan on his own card (no loan) | Guardrails |
 
+## Hosting
+
+The web apps can run on Vercel and both APIs on one free Render service: see [docs/HOSTING.md](docs/HOSTING.md).
+
 ## Demo script
 
 For the presentation, use the click-by-click guide in [docs/DEMO-GUIDE.md](docs/DEMO-GUIDE.md). Every step there was run in headless Chrome and has screenshots; `node scripts/demo-guide.mjs` reruns it.

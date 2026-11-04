@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { localUrl, AdminStreamEvent, MemberStreamEvent } from '@cred/types';
+import { localUrl, serviceUrl, AdminStreamEvent, MemberStreamEvent } from '@cred/types';
 import type { FastifyReply } from '@cred/service-kit';
 import type { ServerResponse } from 'node:http';
 
 type Without<T> = T extends unknown ? Omit<T, 'id' | 'at'> : never;
-const ALLOWED = new Set((['cred', 'admin', 'shop', 'ecosystem'] as const).map(localUrl));
+const ALLOWED = new Set((['cred', 'admin', 'shop', 'ecosystem'] as const).flatMap((a) => [localUrl(a), serviceUrl(a)]));
 
 /** Server-sent events to member apps (per member) and the admin console. */
 export class Hub {

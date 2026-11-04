@@ -1,13 +1,13 @@
 import { randomBytes } from 'node:crypto';
 import { membershipFor } from '@cred/engine';
 import { conflict, handlers, HttpError, unauthorized } from '@cred/service-kit';
-import { credApi, ecosystemApi, localUrl, Membership, NOTICE, NOTICE_VERSION, NoticeLanguage, SIGNUP_KEY_PREFIX, type SessionClaims, type SignupStatus } from '@cred/types';
+import { credApi, ecosystemApi, serviceUrl, Membership, NOTICE, NOTICE_VERSION, NoticeLanguage, SIGNUP_KEY_PREFIX, type SessionClaims, type SignupStatus } from '@cred/types';
 import type { Ctx } from './context';
 import { issueSignupToken, issueToken, verifySignupToken } from './session';
 import { activeRules } from './rules';
 
 type Auth = SessionClaims;
-const credAppUrl = () => process.env.CRED_APP_URL ?? localUrl('cred');
+const credAppUrl = () => serviceUrl('cred');
 
 const ADULT_AGE = 18;
 const SCORE_TIPS: SignupStatus['tips'] = [

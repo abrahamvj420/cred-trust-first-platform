@@ -9,6 +9,8 @@ if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 const config: NextConfig = {
   // Keeps screenshots and demos clean; errors still show in the overlay.
   devIndicators: false,
+  // A separate build folder lets a production build run beside `pnpm dev` (which uses .next)
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   transpilePackages: ['@cred/types', '@cred/ui'],
   env: {
     NEXT_PUBLIC_CRED_API_URL: process.env.CRED_API_URL ?? 'http://localhost:4000',
