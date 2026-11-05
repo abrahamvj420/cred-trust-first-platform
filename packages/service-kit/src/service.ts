@@ -44,8 +44,8 @@ export interface ServiceOptions {
   authenticators: Authenticators;
 }
 
-// Local apps always (localhost, and 127.0.0.1 for the side-by-side page's second phone); hosted apps from their URL variables
-const APP_ORIGINS = [...new Set((['cred', 'admin', 'shop', 'ecosystem'] as const).flatMap((a) => [localUrl(a), localUrl(a).replace('localhost', '127.0.0.1'), serviceUrl(a)]))];
+// Local apps always; hosted apps from their URL variables
+const APP_ORIGINS = [...new Set((['cred', 'admin', 'shop', 'ecosystem'] as const).flatMap((a) => [localUrl(a), serviceUrl(a)]))];
 
 export function createService(opts: ServiceOptions) {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info', transport: undefined } });

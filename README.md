@@ -136,7 +136,7 @@ curl -X POST localhost:4000/sim/member-actions -H 'content-type: application/jso
 
 ## Side by side (for presenting)
 
-`pnpm side-by-side` (with `pnpm demo` running) opens http://localhost:3005: Aarav's and Rohan's phones next to each other, with buttons to buy the ₹1.5L laptop for either or both, advance a month and reset. Each phone has a **CRED** and a **ShopKart** tab. The first time, tap **Aarav Mehta** in the left phone and **Rohan Das** in the right; each phone remembers its member. (The right phone loads from 127.0.0.1 so the browser keeps the two sign-ins apart.)
+`pnpm side-by-side` (with `pnpm demo` running) opens http://localhost:3005: the CRED app in a phone on the left and ShopKart in a phone on the right, and nothing else. Use each as you normally would; a ShopKart purchase on the right shows up live in the CRED app on the left.
 
 ## Hosting
 

@@ -234,7 +234,7 @@ Every screen: loading, empty and error states; AA contrast; 44px tap targets; la
 
 ## Side by side
 
-- `pnpm side-by-side` → `scripts/side-by-side.mjs` on :3005: two phone iframes (left `localhost`, right `127.0.0.1`, so each keeps its own session), and buttons relayed by its own server to the DEMO_MODE scenario endpoints. For this, local origins on 127.0.0.1 are allowed by CORS and the live-update stream, the CRED app, ShopKart and partner sites set `allowedDevOrigins: ['127.0.0.1']`, and ShopKart returns to the store address the checkout came from.
+- `pnpm side-by-side` → `scripts/side-by-side.mjs` on :3005: a static page with two phone iframes, the CRED app (left) and ShopKart (right). Nothing else; no changes to the apps or services.
 
 ## Hosting
 
