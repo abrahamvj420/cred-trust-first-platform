@@ -9,6 +9,8 @@ if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 const config: NextConfig = {
   // Keeps screenshots and demos clean; errors still show in the overlay.
   devIndicators: false,
+  // The side-by-side page (pnpm side-by-side) loads the second phone from 127.0.0.1
+  allowedDevOrigins: ['127.0.0.1'],
   // A separate build folder lets a production build run beside `pnpm dev` (which uses .next)
   distDir: process.env.NEXT_DIST_DIR || '.next',
   transpilePackages: ['@cred/types', '@cred/ui'],

@@ -35,16 +35,32 @@ const sh = (cmd) => {
 // fails with EADDRINUSE, so the demo would look ready with stale or missing pieces.
 step('Freeing the demo ports');
 const listeners = () => SERVICES.flatMap(([name, url]) => sh(`lsof -nP -iTCP:${new URL(url).port} -sTCP:LISTEN -t`).split('\n').filter(Boolean).map((pid) => ({ name, url, pid: Number(pid) })));
-const foreign = [];
+const cwdOf = (pid) => sh(`lsof -a -p ${pid} -d cwd -Fn`).split('\n').find((x) => x.startsWith('n'))?.slice(1) ?? '';
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const ours = (cwd) => cwd === root || cwd.startsWith(root + path.sep);
+let foreign = [];
 for (const l of listeners()) {
-  const cwd = sh(`lsof -a -p ${l.pid} -d cwd -Fn`).split('\n').find((s) => s.startsWith('n'))?.slice(1) ?? '';
-  if (cwd === root || cwd.startsWith(root + path.sep)) {
+  const cwd = cwdOf(l.pid);
+  if (ours(cwd)) {
     console.log(`  stopping a leftover ${l.name} (pid ${l.pid})`);
     try {
       process.kill(l.pid, 'SIGTERM');
     } catch {}
-  } else foreign.push(`${new URL(l.url).port} (pid ${l.pid}: ${sh(`ps -o command= -p ${l.pid}`).slice(0, 60)})`);
+  } else foreign.push(l);
 }
+// Stopping a leftover app can take its sibling APIs down with it: a process that was already
+// exiting has no readable directory. Only something still running outside this repo is foreign.
+await new Promise((r) => setTimeout(r, 2000));
+foreign = foreign
+  .filter((l) => alive(l.pid) && !ours(cwdOf(l.pid)))
+  .map((l) => `${new URL(l.url).port} (pid ${l.pid}: ${sh(`ps -o command= -p ${l.pid}`).slice(0, 60)})`);
 if (foreign.length) {
   console.error(`\nThese ports are used by something outside this project; stop it and run pnpm demo again:\n  ${foreign.join('\n  ')}`);
   process.exit(1);

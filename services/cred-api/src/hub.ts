@@ -4,7 +4,7 @@ import type { FastifyReply } from '@cred/service-kit';
 import type { ServerResponse } from 'node:http';
 
 type Without<T> = T extends unknown ? Omit<T, 'id' | 'at'> : never;
-const ALLOWED = new Set((['cred', 'admin', 'shop', 'ecosystem'] as const).flatMap((a) => [localUrl(a), serviceUrl(a)]));
+const ALLOWED = new Set((['cred', 'admin', 'shop', 'ecosystem'] as const).flatMap((a) => [localUrl(a), localUrl(a).replace('localhost', '127.0.0.1'), serviceUrl(a)]));
 
 /** Server-sent events to member apps (per member) and the admin console. */
 export class Hub {

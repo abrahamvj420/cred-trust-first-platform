@@ -134,6 +134,10 @@ curl -X POST localhost:4000/sim/member-actions -H 'content-type: application/jso
 | Kabir Singh | Newer member; this month's bill includes a flight he can't clear at once | 3, 5, 8 |
 | Rohan Das | Minimum-only payments; the laptop would take him to ~96% of his limit: gets help, not credit, and can set up a pay-down plan on his own card (no loan) | Guardrails |
 
+## Side by side (for presenting)
+
+`pnpm side-by-side` (with `pnpm demo` running) opens http://localhost:3005: Aarav's and Rohan's phones next to each other, with buttons to buy the ₹1.5L laptop for either or both, advance a month and reset. Each phone has a **CRED** and a **ShopKart** tab. The first time, tap **Aarav Mehta** in the left phone and **Rohan Das** in the right; each phone remembers its member. (The right phone loads from 127.0.0.1 so the browser keeps the two sign-ins apart.)
+
 ## Hosting
 
 The web apps can run on Vercel and both APIs on one free Render service: see [docs/HOSTING.md](docs/HOSTING.md).

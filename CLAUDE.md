@@ -232,6 +232,10 @@ Every screen: loading, empty and error states; AA contrast; 44px tap targets; la
 - **Ecosystem portals:** every partner has a customer-facing page in its own brand (`?c=per_<persona>` picks the customer): `/bank`, `/upi`, `/aa`, `/insurer`, `/fundhouse`, `/lender`, `/health`, plus a directory at `/`. They read only ecosystem-api (`auth: 'page'` endpoints). New themes `lender` and `health`.
 - **Loan against holdings:** CRED sizes the pledge at its own loan-to-value and rounds pledged units **up** (3 decimals), so the pledge never falls a fraction short of the lender's cap.
 
+## Side by side
+
+- `pnpm side-by-side` → `scripts/side-by-side.mjs` on :3005: two phone iframes (left `localhost`, right `127.0.0.1`, so each keeps its own session), and buttons relayed by its own server to the DEMO_MODE scenario endpoints. For this, local origins on 127.0.0.1 are allowed by CORS and the live-update stream, the CRED app, ShopKart and partner sites set `allowedDevOrigins: ['127.0.0.1']`, and ShopKart returns to the store address the checkout came from.
+
 ## Hosting
 
 - Four Next.js apps on Vercel (one project each, Root Directory `apps/<name>`); both APIs in one Render web service from `render.yaml`, run by `scripts/serve-apis.mjs` (seeds, starts both on private ports, serves `/` → cred-api and `/eco/…` → ecosystem-api on `$PORT`). Steps and variables: `docs/HOSTING.md`.

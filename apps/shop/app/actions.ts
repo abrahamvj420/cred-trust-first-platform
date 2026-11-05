@@ -1,11 +1,17 @@
 'use server';
 
 import { ecosystemApi, MemberKey, serviceUrl } from '@cred/types';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { productBySlug } from '@/lib/catalog';
 import { CART_COOKIE, currentShopper, gateway, orderCookie, parseLines, readCart, SHOPPER_COOKIE } from '@/lib/server';
+
+/** Back to the store address the shopper is on (localhost or 127.0.0.1 locally), or the hosted one. */
+async function shopOrigin(): Promise<string> {
+  const origin = (await headers()).get('origin');
+  return origin && /^http:\/\/(localhost|127\.0\.0\.1):3002$/.test(origin) ? origin : serviceUrl('shop');
+}
 
 const back = (form: FormData) => z.string().startsWith('/').catch('/').parse(form.get('back'));
 
@@ -63,7 +69,7 @@ export async function pay(_: { error: string | null }, form: FormData): Promise<
       amountPaise: cart.totalPaise,
       description: description.slice(0, 140),
       shopperPhone: shopper.phone,
-      returnUrl: `${serviceUrl('shop')}/order/${orderId}`,
+      returnUrl: `${await shopOrigin()}/order/${orderId}`,
       instrument: parsed.data.method === 'card' ? { method: 'card', cardToken: parsed.data.cardToken } : { method: 'upi', vpa: parsed.data.vpa },
     },
   });
